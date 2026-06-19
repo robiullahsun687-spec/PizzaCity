@@ -1,0 +1,6 @@
+{
+  "name": "Pizza City Oman",
+  "description": "Full-stack pizza ordering and outlet order management platform with WhatsApp notification triggers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
