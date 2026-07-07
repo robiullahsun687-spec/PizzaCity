@@ -5,6 +5,19 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
+import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore as getClientFirestore, 
+  doc, 
+  getDoc, 
+  collection, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc 
+} from "firebase/firestore";
 
 dotenv.config();
 
@@ -207,6 +220,19 @@ let inMemPromoCodes = [...SEED_PROMOS].map((it, idx) => ({
 
 let inMemOrders: InMemOrder[] = [];
 
+const SEED_BRANCHES = [
+  { name: "Nizwa", phone: "+968 96928714", whatsapp: "+968 96928714", address: "Near Nizwa Souq, Nizwa City Center, Nizwa, Oman", map: "https://maps.google.com/maps?q=Nizwa,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", geo: "Nizwa", hours: "Daily 11 AM – 11 PM", delivery: true, isActive: true, image: "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=400&q=80" },
+  { name: "Samail", phone: "+968 96928716", whatsapp: "+968 96928716", address: "Main Shopping High Street Plaza, Samail, Oman", map: "https://maps.google.com/maps?q=Samail,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", geo: "Samail", hours: "Daily 11 AM – 11 PM", delivery: true, isActive: true, image: "https://images.unsplash.com/photo-1595854341625-f33ee10dbf94?auto=format&fit=crop&w=400&q=80" },
+  { name: "Sur", phone: "+968 96928717", whatsapp: "+968 96928717", address: "Al-Muraj Street Commercial Corridor, Sur, Oman", map: "https://maps.google.com/maps?q=Sur,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", geo: "Sur", hours: "Daily 11 AM – 11 PM", delivery: true, isActive: true, image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=400&q=80" },
+  { name: "Quriyat", phone: "+968 96928719", whatsapp: "+968 96928719", address: "Coastal Expressway High Road, Quriyat, Oman", map: "https://maps.google.com/maps?q=Quriyat,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", geo: "Quriyat", hours: "Daily 11 AM – 11 PM", delivery: true, isActive: true, image: "https://images.unsplash.com/photo-1590947132387-155cc02f3212?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Fanja", phone: "+968 96749772", whatsapp: "+968 96749772", address: "Main Highway Intersection Plaza Road, Fanja, Oman", map: "https://maps.google.com/maps?q=Fanja,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", geo: "Fanja", hours: "Daily 11 AM – 11 PM", delivery: true, isActive: true, image: "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=400&q=80" },
+];
+
+let inMemBranches = [...SEED_BRANCHES].map((branch, idx) => ({
+  _id: `br_${idx + 1}`,
+  ...branch
+}));
+
 // Configuration variables
 const MONGODB_URI = process.env.MONGODB_URI;
 let useMongoDB = false;
@@ -273,6 +299,21 @@ const BannerSchema = new mongoose.Schema({
 
 const MongoBanner = mongoose.model("Banner", BannerSchema);
 
+const BranchSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  phone: { type: String, required: true },
+  whatsapp: { type: String, required: true },
+  address: { type: String, required: true },
+  map: { type: String, default: "" },
+  geo: { type: String, default: "" },
+  hours: { type: String, default: "Daily 11 AM – 11 PM" },
+  delivery: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: true },
+  image: { type: String, default: "" },
+});
+
+const MongoBranch = mongoose.model("Branch", BranchSchema);
+
 // Establish database connection gracefully
 const isUriValid = MONGODB_URI && 
   (MONGODB_URI.startsWith("mongodb://") || MONGODB_URI.startsWith("mongodb+srv://")) && 
@@ -322,6 +363,13 @@ if (isUriValid) {
           await MongoPromoCode.insertMany(SEED_PROMOS);
           console.log("Seeded database with default Pizza City promo codes.");
         }
+
+        // Seed branches dynamically if database is empty
+        const branchCount = await MongoBranch.countDocuments();
+        if (branchCount === 0) {
+          await MongoBranch.insertMany(SEED_BRANCHES);
+          console.log("Seeded database with default Pizza City branches.");
+        }
       } catch (seedErr) {
         console.error("Warning: DB Seed operation ran into data constraints:", seedErr);
       }
@@ -336,6 +384,297 @@ if (isUriValid) {
   console.log("No valid MONGODB_URI set in environmental secrets. Running on robust, active local mock-store.");
   useMongoDB = false;
 }
+
+// Client-side SDK adapter for firebase-admin compatibility with local JSON file fallback
+const LOCAL_DATA_DIR = path.join(process.cwd(), "data-local");
+
+function ensureLocalDataDir() {
+  if (!fs.existsSync(LOCAL_DATA_DIR)) {
+    fs.mkdirSync(LOCAL_DATA_DIR, { recursive: true });
+  }
+}
+
+function getLocalFile(colName: string): string {
+  ensureLocalDataDir();
+  return path.join(LOCAL_DATA_DIR, `${colName}.json`);
+}
+
+function readLocalDocs(colName: string): any[] {
+  try {
+    const file = getLocalFile(colName);
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    }
+  } catch (err) {
+    console.error(`Error reading local docs for ${colName}:`, err);
+  }
+  return [];
+}
+
+function writeLocalDocs(colName: string, docs: any[]) {
+  try {
+    const file = getLocalFile(colName);
+    fs.writeFileSync(file, JSON.stringify(docs, null, 2), "utf8");
+  } catch (err) {
+    console.error(`Error writing local docs for ${colName}:`, err);
+  }
+}
+
+class ClientDocRef {
+  private db: any;
+  private colName: string;
+  private docId: string;
+
+  constructor(db: any, colName: string, docId: string) {
+    this.db = db;
+    this.colName = colName;
+    this.docId = docId;
+  }
+  
+  get id() { return this.docId; }
+
+  async get() {
+    // Check local first
+    const locals = readLocalDocs(this.colName);
+    const localDoc = locals.find((d: any) => d._id === this.docId || d.id === this.docId);
+    if (localDoc) {
+      const data = { ...localDoc };
+      delete data._id;
+      delete data.id;
+      return {
+        exists: true,
+        id: this.docId,
+        data: () => data
+      };
+    }
+
+    try {
+      const d = await getDoc(doc(this.db, this.colName, this.docId));
+      return {
+        exists: d.exists(),
+        id: d.id,
+        data: () => d.data()
+      };
+    } catch (err) {
+      return {
+        exists: false,
+        id: this.docId,
+        data: () => null
+      };
+    }
+  }
+
+  async update(updates: any) {
+    const locals = readLocalDocs(this.colName);
+    const idx = locals.findIndex((d: any) => d._id === this.docId || d.id === this.docId);
+    if (idx !== -1) {
+      locals[idx] = { ...locals[idx], ...updates };
+      writeLocalDocs(this.colName, locals);
+      return;
+    }
+
+    try {
+      await updateDoc(doc(this.db, this.colName, this.docId), updates);
+    } catch (err: any) {
+      console.warn(`Firestore update failed for ${this.colName}/${this.docId}, updating locally:`, err.message);
+      const d = await this.get();
+      const currentData = d.exists ? d.data() : {};
+      const newDoc = { _id: this.docId, ...currentData, ...updates };
+      locals.push(newDoc);
+      writeLocalDocs(this.colName, locals);
+    }
+  }
+
+  async delete() {
+    const locals = readLocalDocs(this.colName);
+    const idx = locals.findIndex((d: any) => d._id === this.docId || d.id === this.docId);
+    if (idx !== -1) {
+      locals.splice(idx, 1);
+      writeLocalDocs(this.colName, locals);
+    }
+
+    try {
+      await deleteDoc(doc(this.db, this.colName, this.docId));
+    } catch (err: any) {
+      console.warn(`Firestore delete failed for ${this.colName}/${this.docId}:`, err.message);
+    }
+  }
+}
+
+class ClientColRef {
+  private db: any;
+  private colName: string;
+
+  constructor(db: any, colName: string) {
+    this.db = db;
+    this.colName = colName;
+  }
+
+  doc(id: string) {
+    return new ClientDocRef(this.db, this.colName, id);
+  }
+
+  async add(payload: any) {
+    try {
+      const d = await addDoc(collection(this.db, this.colName), payload);
+      return { id: d.id };
+    } catch (err: any) {
+      console.warn(`Firestore add failed for ${this.colName}, saving locally:`, err.message);
+      const localId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const locals = readLocalDocs(this.colName);
+      locals.push({ _id: localId, ...payload });
+      writeLocalDocs(this.colName, locals);
+      return { id: localId };
+    }
+  }
+
+  async get() {
+    let cloudDocs: any[] = [];
+    try {
+      const snap = await getDocs(collection(this.db, this.colName));
+      cloudDocs = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+    } catch (err: any) {
+      console.warn(`Firestore read failed for ${this.colName}:`, err.message);
+    }
+
+    const locals = readLocalDocs(this.colName);
+    const mergedMap = new Map<string, any>();
+
+    // If both are empty and we have default seeds for these collections, initialize the local JSON file
+    if (cloudDocs.length === 0 && locals.length === 0) {
+      let seed: any[] = [];
+      if (this.colName === "menuItems") seed = SEED_MENU_ITEMS;
+      else if (this.colName === "banners") seed = SEED_BANNERS;
+      else if (this.colName === "promos") seed = SEED_PROMOS;
+      else if (this.colName === "branches") seed = SEED_BRANCHES;
+
+      if (seed.length > 0) {
+        console.log(`[Local Fallback]: Seeding local storage for ${this.colName}`);
+        const seededDocs = seed.map((item, idx) => ({
+          _id: `local_seed_${idx + 1}`,
+          ...item
+        }));
+        writeLocalDocs(this.colName, seededDocs);
+        locals.push(...seededDocs);
+      }
+    }
+
+    for (const doc of cloudDocs) {
+      mergedMap.set(doc.id, doc);
+    }
+
+    for (const doc of locals) {
+      const id = doc._id || doc.id;
+      const cleanDoc = { ...doc };
+      delete cleanDoc._id;
+      mergedMap.set(id, { id, ...cleanDoc });
+    }
+
+    const mergedDocs = Array.from(mergedMap.values()).map(doc => {
+      const cleanDoc = { ...doc };
+      const id = doc.id;
+      delete cleanDoc.id;
+      return {
+        id,
+        exists: true,
+        data: () => cleanDoc
+      };
+    });
+
+    return {
+      empty: mergedDocs.length === 0,
+      docs: mergedDocs
+    };
+  }
+}
+
+class ClientFirestoreAdapter {
+  private db: any;
+
+  constructor(db: any) {
+    this.db = db;
+  }
+
+  collection(colName: string) {
+    return new ClientColRef(this.db, colName);
+  }
+}
+
+// Firebase initialization and connection
+let firebaseDb: any = null;
+let useFirebase = false;
+
+async function initializeFirebaseAndSeed() {
+  try {
+    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(configPath)) {
+      const configData = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      const clientApp = initializeApp(configData);
+      const clientDb = getClientFirestore(clientApp, configData.firestoreDatabaseId);
+      firebaseDb = new ClientFirestoreAdapter(clientDb);
+      useFirebase = true;
+      console.log("🟢 [Firebase]: Connected to Firebase Firestore successfully via Client SDK! databaseId:", configData.firestoreDatabaseId || "(default)");
+
+      try {
+        // 1. Seed Menu Items
+        const menuItemsRef = firebaseDb.collection("menuItems");
+        const menuSnapshot = await menuItemsRef.get();
+        if (menuSnapshot.empty) {
+          console.log("🟢 [Firebase Seeding]: Seeding Firestore with default menu items...");
+          for (const item of SEED_MENU_ITEMS) {
+            await menuItemsRef.add(item);
+          }
+          console.log("🟢 [Firebase Seeding]: Menu items seeding complete.");
+        }
+
+        // 2. Seed Banners
+        const bannersRef = firebaseDb.collection("banners");
+        const bannersSnapshot = await bannersRef.get();
+        if (bannersSnapshot.empty) {
+          console.log("🟢 [Firebase Seeding]: Seeding Firestore with default banners...");
+          for (const banner of SEED_BANNERS) {
+            await bannersRef.add(banner);
+          }
+          console.log("🟢 [Firebase Seeding]: Banners seeding complete.");
+        }
+
+        // 3. Seed Promos
+        const promosRef = firebaseDb.collection("promos");
+        const promosSnapshot = await promosRef.get();
+        if (promosSnapshot.empty) {
+          console.log("🟢 [Firebase Seeding]: Seeding Firestore with default promo codes...");
+          for (const promo of SEED_PROMOS) {
+            await promosRef.add(promo);
+          }
+          console.log("🟢 [Firebase Seeding]: Promo codes seeding complete.");
+        }
+
+        // 4. Seed Branches
+        const branchesRef = firebaseDb.collection("branches");
+        const branchesSnapshot = await branchesRef.get();
+        if (branchesSnapshot.empty) {
+          console.log("🟢 [Firebase Seeding]: Seeding Firestore with default branches...");
+          for (const branch of SEED_BRANCHES) {
+            await branchesRef.add(branch);
+          }
+          console.log("🟢 [Firebase Seeding]: Branches seeding complete.");
+        }
+      } catch (seedErr) {
+        console.error("🔴 [Firebase Seeding]: Warning - Firestore seeding failed:", seedErr);
+      }
+    } else {
+      console.log("🟢 [Firebase Setup]: Config file firebase-applet-config.json not found.");
+    }
+  } catch (err) {
+    console.error("🔴 [Firebase Setup]: Failed to initialize Firebase on backend:", err);
+    useFirebase = false;
+  }
+}
+
+initializeFirebaseAndSeed();
 
 // Outlets database map
 const OUTLET_MAPPINGS: Record<string, string> = {
@@ -434,7 +773,7 @@ const basicAuth = (req: express.Request, res: express.Response, next: express.Ne
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
-    database: useMongoDB ? "MongoDB Atlas" : "In-Memory/Local Fallback Mock Mode",
+    database: useMongoDB ? "MongoDB Atlas" : (useFirebase ? "Firebase Firestore" : "In-Memory/Local Fallback Mock Mode"),
     active_outlets: Object.keys(OUTLET_MAPPINGS).length,
     seeding: "complete",
   });
@@ -449,6 +788,13 @@ app.get("/api/menu", async (req, res) => {
     if (useMongoDB) {
       const query = category ? { category: String(category) } : {};
       items = await MongoMenuItem.find(query);
+    } else if (useFirebase) {
+      const menuRef = firebaseDb.collection("menuItems");
+      const menuSnapshot = await menuRef.get();
+      items = menuSnapshot.docs.map(doc => ({ _id: doc.id, ...doc.data() }));
+      if (category) {
+        items = items.filter((item: any) => item.category === category);
+      }
     } else {
       items = category
         ? inMemMenuItems.filter((item) => item.category === category)
@@ -466,6 +812,12 @@ app.get("/api/promos/list", async (req, res) => {
     let promos;
     if (useMongoDB) {
       promos = await MongoPromoCode.find({ isActive: true });
+    } else if (useFirebase) {
+      const promosRef = firebaseDb.collection("promos");
+      const snapshot = await promosRef.get();
+      promos = snapshot.docs
+        .map(doc => ({ _id: doc.id, ...doc.data() }))
+        .filter((promo: any) => promo.isActive !== false);
     } else {
       promos = inMemPromoCodes.filter((promo) => promo.isActive !== false);
     }
@@ -486,6 +838,12 @@ app.post("/api/promos/validate", async (req, res) => {
     let promo;
     if (useMongoDB) {
       promo = await MongoPromoCode.findOne({ code: new RegExp(`^${code.trim()}$`, "i"), isActive: true });
+    } else if (useFirebase) {
+      const promosRef = firebaseDb.collection("promos");
+      const snapshot = await promosRef.get();
+      promo = snapshot.docs
+        .map(doc => ({ _id: doc.id, ...doc.data() }))
+        .find((p: any) => p.code.toLowerCase() === code.trim().toLowerCase() && p.isActive !== false);
     } else {
       promo = inMemPromoCodes.find((p) => p.code.toLowerCase() === code.trim().toLowerCase() && p.isActive);
     }
@@ -494,11 +852,11 @@ app.post("/api/promos/validate", async (req, res) => {
       return res.status(200).json({ success: false, error: "Invalid, expired, or non-existent coupon code." });
     }
 
-    const minAmount = promo.minOrderAmount || 0;
+    const minAmount = (promo as any).minOrderAmount || 0;
     if (cartTotal < minAmount) {
       return res.status(200).json({
         success: false,
-        error: `Cart total must be at least OMR ${minAmount.toFixed(3)} to apply "${promo.code}".`
+        error: `Cart total must be at least OMR ${minAmount.toFixed(3)} to apply "${(promo as any).code}".`
       });
     }
 
@@ -514,6 +872,12 @@ app.get("/api/banners", async (req, res) => {
     let banners;
     if (useMongoDB) {
       banners = await MongoBanner.find({ isActive: true });
+    } else if (useFirebase) {
+      const bannersRef = firebaseDb.collection("banners");
+      const snapshot = await bannersRef.get();
+      banners = snapshot.docs
+        .map(doc => ({ _id: doc.id, ...doc.data() }))
+        .filter((banner: any) => banner.isActive !== false);
     } else {
       banners = inMemBanners.filter((banner) => banner.isActive !== false);
     }
@@ -533,8 +897,8 @@ app.post("/api/orders", async (req, res) => {
   if (!customer || !customer.name || !customer.phone) {
     return res.status(400).json({ error: "Customer name and active WhatsApp phone number are required." });
   }
-  if (!outlet || !OUTLET_MAPPINGS[outlet]) {
-    return res.status(400).json({ error: `Valid outlet ('Nizwa', 'Samail', 'Sur', 'Quriyat', 'Fanja') is required.` });
+  if (!outlet) {
+    return res.status(400).json({ error: "Outlet/Branch name is required." });
   }
 
   // Calculate order total with promo discount
@@ -543,24 +907,83 @@ app.post("/api/orders", async (req, res) => {
   const total = Math.max(0, subtotal - discountAmt);
 
   try {
+    let targetPhone = "";
+    let foundBranchName = outlet;
+
+    // Look up branch in Mongo / Firestore / InMem to get WhatsApp/Phone number
+    if (useMongoDB) {
+      const dbBranch = await MongoBranch.findOne({ name: { $regex: new RegExp(`^${outlet}$`, "i") } });
+      if (dbBranch) {
+        targetPhone = dbBranch.whatsapp || dbBranch.phone;
+        foundBranchName = dbBranch.name;
+      }
+    } else if (useFirebase) {
+      const snapshot = await firebaseDb.collection("branches").get();
+      const dbBranch = snapshot.docs
+        .map((d: any) => d.data())
+        .find((b: any) => b.name.toLowerCase() === outlet.toLowerCase());
+      if (dbBranch) {
+        targetPhone = dbBranch.whatsapp || dbBranch.phone;
+        foundBranchName = dbBranch.name;
+      }
+    } else {
+      const inMemBranch = inMemBranches.find(b => b.name.toLowerCase() === outlet.toLowerCase());
+      if (inMemBranch) {
+        targetPhone = inMemBranch.whatsapp || inMemBranch.phone;
+        foundBranchName = inMemBranch.name;
+      }
+    }
+
+    // Fallback to static OUTLET_MAPPINGS
+    if (!targetPhone) {
+      const match = Object.keys(OUTLET_MAPPINGS).find(k => k.toLowerCase() === outlet.toLowerCase());
+      if (match) {
+        targetPhone = OUTLET_MAPPINGS[match];
+        foundBranchName = match;
+      }
+    }
+
+    if (!targetPhone) {
+      return res.status(400).json({ error: `Valid branch is required. Could not find active branch matching "${outlet}".` });
+    }
+
     let savedOrder;
     if (useMongoDB) {
       const newOrder = new MongoOrder({
         items,
         customer,
-        outlet,
+        outlet: foundBranchName,
         total,
         status: "pending",
         timestamp: new Date(),
       });
       savedOrder = await newOrder.save();
+    } else if (useFirebase) {
+      const ordersRef = firebaseDb.collection("orders");
+      const docRef = await ordersRef.add({
+        items,
+        customer,
+        outlet: foundBranchName,
+        total,
+        status: "pending",
+        timestamp: new Date().toISOString(),
+      });
+      savedOrder = {
+        _id: docRef.id,
+        items,
+        customer,
+        outlet: foundBranchName,
+        total,
+        status: "pending",
+        timestamp: new Date().toISOString(),
+      };
     } else {
       const newId = `ord_${Date.now()}`;
       const inMemOrder: InMemOrder = {
         _id: newId,
         items,
         customer,
-        outlet,
+        outlet: foundBranchName,
         total,
         status: "pending",
         timestamp: new Date().toISOString(),
@@ -570,13 +993,13 @@ app.post("/api/orders", async (req, res) => {
     }
 
     // Build the WhatsApp message trigger block per outlet
-    const targetPhone = OUTLET_MAPPINGS[outlet].replace(/\s+/g, "").replace("+", "");
+    const cleanPhone = targetPhone.replace(/\s+/g, "").replace("+", "");
     const itemsText = items
       .map((i) => `• ${i.quantity}x ${i.name} (OMR ${i.price.toFixed(3)})`)
       .join("\n");
 
     const messageTemplate = 
-      `Hi Pizza City ${outlet}! 🍕\n\n` +
+      `Hi Pizza City ${foundBranchName}! 🍕\n\n` +
       `New Web Order Placed (ID: ${savedOrder._id.toString().slice(-6)})\n` +
       `-----------------------------\n` +
       `${itemsText}\n` +
@@ -590,7 +1013,7 @@ app.post("/api/orders", async (req, res) => {
       `\n` +
       `Please confirm receipt and start preparing my perfect slice! Thank you.`;
 
-    const whatsappUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(messageTemplate)}`;
+    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageTemplate)}`;
 
     // Optional Google Sheets automatic sync trigger
     const config = loadSheetsConfig();
@@ -641,6 +1064,20 @@ app.get("/api/orders/track/:id", async (req, res) => {
       if (!order && id.length === 6) {
         const recentOrders = await MongoOrder.find().sort({ timestamp: -1 }).limit(100);
         order = recentOrders.find(o => o._id.toString().slice(-6) === id);
+      }
+    } else if (useFirebase) {
+      const orderRef = firebaseDb.collection("orders").doc(id);
+      const orderDoc = await orderRef.get();
+      if (orderDoc.exists) {
+        order = { _id: orderDoc.id, ...orderDoc.data() };
+      } else {
+        // Fallback suffix search for 6-char IDs
+        if (id.length === 6) {
+          const ordersRef = firebaseDb.collection("orders");
+          const snapshot = await ordersRef.get();
+          const allOrders = snapshot.docs.map(d => ({ _id: d.id, ...d.data() as any }));
+          order = allOrders.find(o => o._id.slice(-6) === id);
+        }
       }
     } else {
       order = inMemOrders.find(
@@ -763,6 +1200,15 @@ app.get("/api/orders/:outletId/summary", basicAuth, async (req, res) => {
       } else {
         orders = await MongoOrder.find({ outlet: new RegExp(`^${outletId}$`, "i") });
       }
+    } else if (useFirebase) {
+      const ordersRef = firebaseDb.collection("orders");
+      const snapshot = await ordersRef.get();
+      orders = snapshot.docs.map(doc => ({ _id: doc.id, ...doc.data() as any }));
+      if (outletId.toLowerCase() !== "all") {
+        orders = orders.filter(
+          (o: any) => o.outlet.toLowerCase() === outletId.toLowerCase()
+        );
+      }
     } else {
       if (outletId.toLowerCase() === "all") {
         orders = inMemOrders;
@@ -841,6 +1287,10 @@ app.get("/admin/api/promos", basicAuth, async (req, res) => {
     let promos;
     if (useMongoDB) {
       promos = await MongoPromoCode.find({});
+    } else if (useFirebase) {
+      const promosRef = firebaseDb.collection("promos");
+      const snapshot = await promosRef.get();
+      promos = snapshot.docs.map(doc => ({ _id: doc.id, ...doc.data() }));
     } else {
       promos = inMemPromoCodes;
     }
@@ -874,6 +1324,24 @@ app.post("/admin/api/promos", basicAuth, async (req, res) => {
         isActive: isActive !== false
       });
       await newPromo.save();
+      return res.json(newPromo);
+    } else if (useFirebase) {
+      const promosRef = firebaseDb.collection("promos");
+      const snapshot = await promosRef.get();
+      const existing = snapshot.docs.some(doc => (doc.data() as any).code === uppercaseCode);
+      if (existing) {
+        return res.status(400).json({ error: "Promo code with this code already exists." });
+      }
+
+      const payload = {
+        code: uppercaseCode,
+        discountType,
+        discountValue: Number(discountValue),
+        minOrderAmount: Number(minOrderAmount) || 0,
+        isActive: isActive !== false
+      };
+      const docRef = await promosRef.add(payload);
+      const newPromo = { _id: docRef.id, ...payload };
       return res.json(newPromo);
     } else {
       const existing = inMemPromoCodes.some((p) => p.code === uppercaseCode);
@@ -909,6 +1377,15 @@ app.patch("/admin/api/promos/:id", basicAuth, async (req, res) => {
       if (!updatedPromo) {
         return res.status(404).json({ error: "Promo not found." });
       }
+    } else if (useFirebase) {
+      const promoRef = firebaseDb.collection("promos").doc(id);
+      const checkDoc = await promoRef.get();
+      if (!checkDoc.exists) {
+        return res.status(404).json({ error: "Promo not found." });
+      }
+      await promoRef.update(updates);
+      const updatedDoc = await promoRef.get();
+      updatedPromo = { _id: updatedDoc.id, ...updatedDoc.data() };
     } else {
       const idx = inMemPromoCodes.findIndex((p) => p._id === id);
       if (idx !== -1) {
@@ -933,6 +1410,13 @@ app.delete("/admin/api/promos/:id", basicAuth, async (req, res) => {
       if (!deleted) {
         return res.status(404).json({ error: "Promo not found." });
       }
+    } else if (useFirebase) {
+      const promoRef = firebaseDb.collection("promos").doc(id);
+      const checkDoc = await promoRef.get();
+      if (!checkDoc.exists) {
+        return res.status(404).json({ error: "Promo not found." });
+      }
+      await promoRef.delete();
     } else {
       const idx = inMemPromoCodes.findIndex((p) => p._id === id);
       if (idx !== -1) {
@@ -953,6 +1437,10 @@ app.get("/admin/api/banners", basicAuth, async (req, res) => {
     let banners;
     if (useMongoDB) {
       banners = await MongoBanner.find({});
+    } else if (useFirebase) {
+      const bannersRef = firebaseDb.collection("banners");
+      const snapshot = await bannersRef.get();
+      banners = snapshot.docs.map(doc => ({ _id: doc.id, ...doc.data() }));
     } else {
       banners = inMemBanners;
     }
@@ -984,6 +1472,21 @@ app.post("/admin/api/banners", basicAuth, async (req, res) => {
         type: type || "all",
       });
       savedBanner = await newBanner.save();
+    } else if (useFirebase) {
+      const bannersRef = firebaseDb.collection("banners");
+      const payload = {
+        title,
+        subtitle: subtitle || "",
+        badge: badge || "",
+        image: image || "",
+        buttonText: buttonText || "Order Now",
+        buttonLink: buttonLink || "#menu",
+        isActive: isActive !== false,
+        stylePattern: stylePattern || "attached",
+        type: type || "all",
+      };
+      const docRef = await bannersRef.add(payload);
+      savedBanner = { _id: docRef.id, ...payload };
     } else {
       const newId = `b_${Date.now()}`;
       savedBanner = {
@@ -1018,6 +1521,15 @@ app.patch("/admin/api/banners/:id", basicAuth, async (req, res) => {
       if (!updatedBanner) {
         return res.status(404).json({ error: "Banner not found." });
       }
+    } else if (useFirebase) {
+      const bannerRef = firebaseDb.collection("banners").doc(id);
+      const checkDoc = await bannerRef.get();
+      if (!checkDoc.exists) {
+        return res.status(404).json({ error: "Banner not found." });
+      }
+      await bannerRef.update(updates);
+      const updatedDoc = await bannerRef.get();
+      updatedBanner = { _id: updatedDoc.id, ...updatedDoc.data() };
     } else {
       const idx = inMemBanners.findIndex((b) => b._id === id);
       if (idx !== -1) {
@@ -1043,6 +1555,13 @@ app.delete("/admin/api/banners/:id", basicAuth, async (req, res) => {
       if (!deleted) {
         return res.status(404).json({ error: "Banner not found." });
       }
+    } else if (useFirebase) {
+      const bannerRef = firebaseDb.collection("banners").doc(id);
+      const checkDoc = await bannerRef.get();
+      if (!checkDoc.exists) {
+        return res.status(404).json({ error: "Banner not found." });
+      }
+      await bannerRef.delete();
     } else {
       const idx = inMemBanners.findIndex((b) => b._id === id);
       if (idx !== -1) {
@@ -1070,6 +1589,16 @@ app.patch("/admin/api/banners/:id/toggle", basicAuth, async (req, res) => {
       }
       current.isActive = !current.isActive;
       updatedBanner = await current.save();
+    } else if (useFirebase) {
+      const bannerRef = firebaseDb.collection("banners").doc(id);
+      const checkDoc = await bannerRef.get();
+      if (!checkDoc.exists) {
+        return res.status(404).json({ error: "Banner not found." });
+      }
+      const currentActive = (checkDoc.data() as any).isActive;
+      await bannerRef.update({ isActive: !currentActive });
+      const updatedDoc = await bannerRef.get();
+      updatedBanner = { _id: updatedDoc.id, ...updatedDoc.data() };
     } else {
       const idx = inMemBanners.findIndex((b) => b._id === id);
       if (idx !== -1) {
@@ -1112,6 +1641,10 @@ app.post("/admin/api/menu", basicAuth, async (req, res) => {
     if (useMongoDB) {
       const newItem = new MongoMenuItem(payload);
       savedItem = await newItem.save();
+    } else if (useFirebase) {
+      const menuRef = firebaseDb.collection("menuItems");
+      const docRef = await menuRef.add(payload);
+      savedItem = { _id: docRef.id, ...payload };
     } else {
       const _id = `m_${Date.now()}`;
       savedItem = { _id, ...payload };
@@ -1133,6 +1666,14 @@ app.patch("/admin/api/menu/:id", basicAuth, async (req, res) => {
     let updatedItem;
     if (useMongoDB) {
       updatedItem = await MongoMenuItem.findByIdAndUpdate(id, updates, { new: true });
+    } else if (useFirebase) {
+      const itemRef = firebaseDb.collection("menuItems").doc(id);
+      const checkDoc = await itemRef.get();
+      if (checkDoc.exists) {
+        await itemRef.update(updates);
+        const updatedDoc = await itemRef.get();
+        updatedItem = { _id: updatedDoc.id, ...updatedDoc.data() };
+      }
     } else {
       const idx = inMemMenuItems.findIndex((item) => item._id === id);
       if (idx !== -1) {
@@ -1160,6 +1701,13 @@ app.delete("/admin/api/menu/:id", basicAuth, async (req, res) => {
     if (useMongoDB) {
       const result = await MongoMenuItem.findByIdAndDelete(id);
       deleted = !!result;
+    } else if (useFirebase) {
+      const itemRef = firebaseDb.collection("menuItems").doc(id);
+      const checkDoc = await itemRef.get();
+      if (checkDoc.exists) {
+        await itemRef.delete();
+        deleted = true;
+      }
     } else {
       const idx = inMemMenuItems.findIndex((item) => item._id === id);
       if (idx !== -1) {
@@ -1190,6 +1738,15 @@ app.patch("/admin/api/menu/:id/toggle", basicAuth, async (req, res) => {
         item.available = !item.available;
         updatedItem = await item.save();
       }
+    } else if (useFirebase) {
+      const itemRef = firebaseDb.collection("menuItems").doc(id);
+      const checkDoc = await itemRef.get();
+      if (checkDoc.exists) {
+        const currentActive = (checkDoc.data() as any).available;
+        await itemRef.update({ available: !currentActive });
+        const updatedDoc = await itemRef.get();
+        updatedItem = { _id: updatedDoc.id, ...updatedDoc.data() };
+      }
     } else {
       const idx = inMemMenuItems.findIndex((item) => item._id === id);
       if (idx !== -1) {
@@ -1208,6 +1765,188 @@ app.patch("/admin/api/menu/:id/toggle", basicAuth, async (req, res) => {
   }
 });
 
+// GET /api/branches — get active branches for public customer site
+app.get("/api/branches", async (req, res) => {
+  try {
+    let branches;
+    if (useMongoDB) {
+      branches = await MongoBranch.find({ isActive: true });
+    } else if (useFirebase) {
+      const branchesRef = firebaseDb.collection("branches");
+      const snapshot = await branchesRef.get();
+      branches = snapshot.docs
+        .map(doc => ({ _id: doc.id, ...doc.data() }))
+        .filter(b => b.isActive === true || b.isActive === undefined);
+    } else {
+      branches = inMemBranches.filter(b => b.isActive !== false);
+    }
+    return res.json(branches);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to fetch branches: " + error.message });
+  }
+});
+
+// GET /admin/api/branches — get all branches for admin console (Requires basic auth)
+app.get("/admin/api/branches", basicAuth, async (req, res) => {
+  try {
+    let branches;
+    if (useMongoDB) {
+      branches = await MongoBranch.find({});
+    } else if (useFirebase) {
+      const branchesRef = firebaseDb.collection("branches");
+      const snapshot = await branchesRef.get();
+      branches = snapshot.docs.map(doc => ({ _id: doc.id, ...doc.data() }));
+    } else {
+      branches = inMemBranches;
+    }
+    return res.json(branches);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to fetch admin branches: " + error.message });
+  }
+});
+
+// POST /admin/api/branches — add a new branch (Requires basic auth)
+app.post("/admin/api/branches", basicAuth, async (req, res) => {
+  const { name, phone, whatsapp, address, map, geo, hours, delivery, isActive, image } = req.body;
+  if (!name || !phone || !whatsapp || !address) {
+    return res.status(400).json({ error: "Branch name, phone, whatsapp, and address are required." });
+  }
+
+  try {
+    let savedBranch;
+    const payload = {
+      name,
+      phone,
+      whatsapp,
+      address,
+      map: map || "",
+      geo: geo || "",
+      hours: hours || "Daily 11 AM – 11 PM",
+      delivery: delivery !== false,
+      isActive: isActive !== false,
+      image: image || "",
+    };
+
+    if (useMongoDB) {
+      const newBranch = new MongoBranch(payload);
+      savedBranch = await newBranch.save();
+    } else if (useFirebase) {
+      const branchesRef = firebaseDb.collection("branches");
+      const docRef = await branchesRef.add(payload);
+      savedBranch = { _id: docRef.id, ...payload };
+    } else {
+      const newId = `br_${Date.now()}`;
+      savedBranch = { _id: newId, ...payload };
+      inMemBranches.push(savedBranch);
+    }
+    return res.status(201).json(savedBranch);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to create new branch: " + error.message });
+  }
+});
+
+// PATCH /admin/api/branches/:id — update existing branch (Requires basic auth)
+app.patch("/admin/api/branches/:id", basicAuth, async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+
+  try {
+    let updatedBranch;
+    if (useMongoDB) {
+      updatedBranch = await MongoBranch.findByIdAndUpdate(id, updates, { new: true });
+    } else if (useFirebase) {
+      const branchRef = firebaseDb.collection("branches").doc(id);
+      await branchRef.update(updates);
+      const updatedDoc = await branchRef.get();
+      updatedBranch = { _id: updatedDoc.id, ...updatedDoc.data() };
+    } else {
+      const idx = inMemBranches.findIndex(b => b._id === id);
+      if (idx !== -1) {
+        inMemBranches[idx] = { ...inMemBranches[idx], ...updates };
+        updatedBranch = inMemBranches[idx];
+      }
+    }
+
+    if (!updatedBranch) {
+      return res.status(404).json({ error: "Branch not found." });
+    }
+    return res.json(updatedBranch);
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to update branch: " + error.message });
+  }
+});
+
+// DELETE /admin/api/branches/:id — delete branch (Requires basic auth)
+app.delete("/admin/api/branches/:id", basicAuth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    let deleted = false;
+    if (useMongoDB) {
+      const result = await MongoBranch.findByIdAndDelete(id);
+      deleted = !!result;
+    } else if (useFirebase) {
+      const branchRef = firebaseDb.collection("branches").doc(id);
+      const checkDoc = await branchRef.get();
+      if (checkDoc.exists) {
+        await branchRef.delete();
+        deleted = true;
+      }
+    } else {
+      const idx = inMemBranches.findIndex(b => b._id === id);
+      if (idx !== -1) {
+        inMemBranches.splice(idx, 1);
+        deleted = true;
+      }
+    }
+
+    if (!deleted) {
+      return res.status(404).json({ error: "Branch not found to delete." });
+    }
+    return res.json({ success: true });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to delete branch: " + error.message });
+  }
+});
+
+// PATCH /admin/api/branches/:id/toggle — toggle branch active status (Requires basic auth)
+app.patch("/admin/api/branches/:id/toggle", basicAuth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    let updatedBranch;
+    if (useMongoDB) {
+      const branch = await MongoBranch.findById(id);
+      if (branch) {
+        branch.isActive = !branch.isActive;
+        updatedBranch = await branch.save();
+      }
+    } else if (useFirebase) {
+      const branchRef = firebaseDb.collection("branches").doc(id);
+      const checkDoc = await branchRef.get();
+      if (checkDoc.exists) {
+        const currentActive = (checkDoc.data() as any).isActive !== false;
+        await branchRef.update({ isActive: !currentActive });
+        const updatedDoc = await branchRef.get();
+        updatedBranch = { _id: updatedDoc.id, ...updatedDoc.data() };
+      }
+    } else {
+      const idx = inMemBranches.findIndex(b => b._id === id);
+      if (idx !== -1) {
+        inMemBranches[idx].isActive = !inMemBranches[idx].isActive;
+        updatedBranch = inMemBranches[idx];
+      }
+    }
+
+    if (!updatedBranch) {
+      return res.status(404).json({ error: "Branch not found." });
+    }
+    return res.json({ success: true, isActive: updatedBranch.isActive });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to toggle branch status: " + error.message });
+  }
+});
+
 // GET /api/orders/:outletId — get orders for a specific outlet (Requires basic auth)
 app.get("/api/orders/:outletId", basicAuth, async (req, res) => {
   const { outletId } = req.params; // Outlet name e.g. Nizwa, Samail, Sur, Quriyat, Fanja
@@ -1216,6 +1955,13 @@ app.get("/api/orders/:outletId", basicAuth, async (req, res) => {
     let orders;
     if (useMongoDB) {
       orders = await MongoOrder.find({ outlet: outletId }).sort({ timestamp: -1 });
+    } else if (useFirebase) {
+      const ordersRef = firebaseDb.collection("orders");
+      const snapshot = await ordersRef.get();
+      orders = snapshot.docs
+        .map(doc => ({ _id: doc.id, ...doc.data() as any }))
+        .filter((o: any) => o.outlet.toLowerCase() === outletId.toLowerCase())
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     } else {
       orders = inMemOrders
         .filter((o) => o.outlet.toLowerCase() === outletId.toLowerCase())
@@ -1245,6 +1991,14 @@ app.patch("/api/orders/:id/status", basicAuth, async (req, res) => {
         { status },
         { new: true }
       );
+    } else if (useFirebase) {
+      const orderRef = firebaseDb.collection("orders").doc(id);
+      const checkDoc = await orderRef.get();
+      if (checkDoc.exists) {
+        await orderRef.update({ status });
+        const updatedDoc = await orderRef.get();
+        updatedOrder = { _id: updatedDoc.id, ...updatedDoc.data() };
+      }
     } else {
       const idx = inMemOrders.findIndex((o) => o._id === id);
       if (idx !== -1) {

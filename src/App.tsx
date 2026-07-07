@@ -29,7 +29,7 @@ import OutletSelector from "./components/OutletSelector";
 import AdminDashboard from "./components/AdminDashboard";
 import BannerSlider from "./components/BannerSlider";
 import OrderTracker from "./components/OrderTracker";
-import { MenuItem, OUTLETS, OutletName, CartEntry, HeroBanner } from "./types";
+import { MenuItem, OUTLETS, OutletName, CartEntry, HeroBanner, Branch } from "./types";
 import { getOptimizedUnitPrice, getSizeAdjustedPrice, getPriceBreakdown } from "./lib/priceUtils";
 
 // Setup fallback local seed menu data if REST API fails
@@ -176,6 +176,9 @@ export default function App() {
   const [banners, setBanners] = useState<HeroBanner[]>([]);
   const [isLoadingBanners, setIsLoadingBanners] = useState(true);
 
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [isLoadingBranches, setIsLoadingBranches] = useState(true);
+
   // Cart Management
   const [cart, setCart] = useState<CartEntry[]>([]);
   const [isOutletSelectorOpen, setIsOutletSelectorOpen] = useState(false);
@@ -269,8 +272,23 @@ export default function App() {
       }
     }
 
+    async function loadBranches() {
+      setIsLoadingBranches(true);
+      try {
+        const res = await fetch("/api/branches");
+        if (!res.ok) throw new Error("JSON parse error for branches.");
+        const data = await res.json();
+        setBranches(data);
+      } catch (err) {
+        console.warn("Could not retrieve branches, using static mappings", err);
+      } finally {
+        setIsLoadingBranches(false);
+      }
+    }
+
     loadMenu();
     loadBanners();
+    loadBranches();
 
     // ⚡ Cross-tab Broadcast Channel for real-time synchronization
     let bc: BroadcastChannel | null = null;
@@ -284,6 +302,10 @@ export default function App() {
         if (event.data && event.data.type === "BANNERS_UPDATED" && event.data.banners) {
           setBanners(event.data.banners);
           displayToast("🔔 Live Banners sync: Web banners updated by Administrative changes.");
+        }
+        if (event.data && event.data.type === "BRANCHES_UPDATED" && event.data.branches) {
+          setBranches(event.data.branches);
+          displayToast("🔔 Live Branches sync: Branch locations updated!");
         }
       };
     } catch (e) {
@@ -307,8 +329,17 @@ export default function App() {
       }
     };
 
+    const handleCustomBranchesEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setBranches(detail);
+        displayToast("🔔 Live Branches sync: Store network synchronized!");
+      }
+    };
+
     window.addEventListener("pizza_city_menu_updated", handleCustomMenuEvent);
     window.addEventListener("pizza_city_banners_updated", handleCustomBannersEvent);
+    window.addEventListener("pizza_city_branches_updated", handleCustomBranchesEvent);
 
     return () => {
       if (bc) {
@@ -316,6 +347,7 @@ export default function App() {
       }
       window.removeEventListener("pizza_city_menu_updated", handleCustomMenuEvent);
       window.removeEventListener("pizza_city_banners_updated", handleCustomBannersEvent);
+      window.removeEventListener("pizza_city_branches_updated", handleCustomBranchesEvent);
     };
   }, []);
 
@@ -368,7 +400,11 @@ export default function App() {
       ];
     });
 
-    displayToast(`🛒 Added ${selectedQuantity}x ${selectedConfigureItem.name} [Size: ${selectedSize}] to cart.`);
+    if (selectedConfigureItem.category === "pizza") {
+      displayToast(`🛒 Added ${selectedQuantity}x ${selectedConfigureItem.name} [Size: ${selectedSize}] to cart.`);
+    } else {
+      displayToast(`🛒 Added ${selectedQuantity}x ${selectedConfigureItem.name} to cart.`);
+    }
     setSelectedConfigureItem(null);
     setIsOutletSelectorOpen(true); // Bring up selector overlay automatically!
   };
@@ -413,7 +449,12 @@ export default function App() {
     return item.category === menuFilter;
   });
 
-  const featuredMenuItems = menuItems.slice(0, 5).filter((item) => {
+  const hasFeaturedItems = menuItems.some((item) => item.featured);
+  const baseFeaturedList = hasFeaturedItems
+    ? menuItems.filter((item) => item.featured)
+    : menuItems;
+
+  const featuredMenuItems = baseFeaturedList.filter((item) => {
     if (featuredFilter === "all") return true;
     if (featuredFilter === "classic") return item.name.includes("Margherita") || item.category === "pizza";
     if (featuredFilter === "premium") return item.price >= 3.2;
@@ -1453,7 +1494,7 @@ export default function App() {
                 {/* Hero section */}
                 <div className="text-center space-y-1.5 max-w-xl mx-auto py-6">
                   <span className="text-xs font-bold text-[#F26522] uppercase tracking-widest block">Available Outlets</span>
-                  <h1 className="font-playfair font-black text-3xl md:text-4xl text-[#1A0A00]">Our 5 Regional Outlets</h1>
+                  <h1 className="font-playfair font-black text-3xl md:text-4xl text-[#1A0A00]">Our Pizza City Network</h1>
                   <p className="text-xs text-[#9A7B5E] leading-relaxed">
                     Come dine-in, collect order pick-ups, or select hot delivery directly to your home coordinates.
                   </p>
@@ -1461,72 +1502,96 @@ export default function App() {
 
                 {/* Location item grids cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {[
-                    { id: "nizwa", name: "Pizza City — Nizwa", phone: "+968 96928714", map: "https://maps.google.com/maps?q=Nizwa,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", addr: "Near Nizwa Souq, Nizwa City Center, Nizwa, Oman", geo: "Nizwa" },
-                    { id: "samail", name: "Pizza City — Samail", phone: "+968 96928716", map: "https://maps.google.com/maps?q=Samail,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", addr: "Main Shopping High Street Plaza, Samail, Oman", geo: "Samail" },
-                    { id: "sur", name: "Pizza City — Sur", phone: "+968 96928717", map: "https://maps.google.com/maps?q=Sur,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", addr: "Al-Muraj Street Commercial Corridor, Sur, Oman", geo: "Sur" },
-                    { id: "quriyat", name: "Pizza City — Quriyat", phone: "+968 96928719", map: "https://maps.google.com/maps?q=Quriyat,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", addr: "Coastal Expressway High Road, Quriyat, Oman", geo: "Quriyat" },
-                    { id: "fanja", name: "Pizza City — Fanja", phone: "+968 96749772", map: "https://maps.google.com/maps?q=Fanja,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", addr: "Main Highway Intersection Plaza Road, Fanja, Oman", geo: "Fanja" },
-                  ].map((outlet) => (
-                    <div key={outlet.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col justify-between">
-                      {/* Interactive iframe mock */}
-                      <div className="w-full h-44 bg-[#F5EDE3] relative">
-                        <iframe 
-                          src={outlet.map}
-                          width="100%" 
-                          height="100%" 
-                          style={{ border: 0 }} 
-                          allowFullScreen={false} 
-                          loading="lazy"
-                          className="opacity-90 hover:opacity-100 transition-opacity"
-                        ></iframe>
-                      </div>
+                  {((branches && branches.length > 0) 
+                    ? branches.filter(b => b.isActive !== false) 
+                    : [
+                        { _id: "nizwa", name: "Nizwa Outlet", phone: "+968 96928714", map: "https://maps.google.com/maps?q=Nizwa,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", address: "Near Nizwa Souq, Nizwa City Center, Nizwa, Oman", geo: "Nizwa", hours: "Daily 11 AM – 11 PM", delivery: true },
+                        { _id: "samail", name: "Samail Outlet", phone: "+968 96928716", map: "https://maps.google.com/maps?q=Samail,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", address: "Main Shopping High Street Plaza, Samail, Oman", geo: "Samail", hours: "Daily 11 AM – 11 PM", delivery: true },
+                        { _id: "sur", name: "Sur Outlet", phone: "+968 96928717", map: "https://maps.google.com/maps?q=Sur,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", address: "Al-Muraj Street Commercial Corridor, Sur, Oman", geo: "Sur", hours: "Daily 11 AM – 11 PM", delivery: true },
+                        { _id: "quriyat", name: "Quriyat Outlet", phone: "+968 96928719", map: "https://maps.google.com/maps?q=Quriyat,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", address: "Coastal Expressway High Road, Quriyat, Oman", geo: "Quriyat", hours: "Daily 11 AM – 11 PM", delivery: true },
+                        { _id: "fanja", name: "Fanja Outlet", phone: "+968 96749772", map: "https://maps.google.com/maps?q=Fanja,Oman&t=&z=13&ie=UTF8&iwloc=&output=embed", address: "Main Highway Intersection Plaza Road, Fanja, Oman", geo: "Fanja", hours: "Daily 11 AM – 11 PM", delivery: true },
+                      ]
+                  ).map((outlet) => {
+                    const embedMapSrc = outlet.map && outlet.map.includes("output=embed")
+                      ? outlet.map
+                      : `https://maps.google.com/maps?q=${encodeURIComponent(outlet.name + ", " + outlet.address)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
+                    const gpsLink = outlet.map && !outlet.map.includes("output=embed")
+                      ? outlet.map
+                      : `https://maps.google.com/?q=${encodeURIComponent(outlet.geo || outlet.name || "Oman")}`;
 
-                      {/* Content panel */}
-                      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-1.5 text-xs text-green-700 font-bold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]"></span>
-                            Open Now · Daily 11 AM – 11 PM
-                          </div>
-                          
-                          <h4 className="font-playfair font-black text-lg text-[#1A0A00] leading-tight">{outlet.name}</h4>
-                          
-                          <p className="text-xs text-[#9A7B5E] leading-relaxed">
-                            📍 {outlet.addr}
-                          </p>
+                    return (
+                      <div key={outlet._id || outlet.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col justify-between">
+                        
+                        {/* Map or Image Header */}
+                        <div className="w-full h-44 bg-[#F5EDE3] relative">
+                          <iframe 
+                            src={embedMapSrc}
+                            width="100%" 
+                            height="100%" 
+                            style={{ border: 0 }} 
+                            allowFullScreen={false} 
+                            loading="lazy"
+                            className="opacity-90 hover:opacity-100 transition-opacity"
+                          ></iframe>
                         </div>
 
-                        <div className="space-y-2 pt-3 border-t border-gray-100">
-                          {/* Dial telephone helper */}
-                          <div className="flex items-center justify-between text-xs text-[#3D1F00]">
-                            <span className="font-semibold flex items-center gap-1">
-                              <Phone size={13} className="text-[#F26522]" />
-                              Dial Staff line:
-                            </span>
-                            <span className="font-mono font-bold">{outlet.phone}</span>
+                        {/* Content panel */}
+                        <div className="p-5 flex-1 flex flex-col justify-between space-y-4 text-left">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5 text-xs text-green-700 font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]"></span>
+                              {outlet.hours || "Open Now · Daily 11 AM – 11 PM"}
+                            </div>
+                            
+                            <h4 className="font-playfair font-black text-lg text-[#1A0A00] leading-tight">{outlet.name}</h4>
+                            
+                            <p className="text-xs text-[#9A7B5E] leading-relaxed">
+                              📍 {outlet.address}
+                            </p>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 pt-1.5">
-                            <a 
-                              href={`tel:${outlet.phone.replace(/\s+/g, "")}`}
-                              className="py-2 bg-gray-50 hover:bg-gray-100 text-[#3D1F00] font-bold text-center text-xs rounded-xl border border-gray-100 active:scale-95 transition-all block"
-                            >
-                              📞 Call Block
-                            </a>
-                            <a 
-                              href={`https://maps.google.com/?q=${outlet.geo},Oman`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="py-2 bg-gradient-to-r from-[#D72B2B] to-[#F26522] text-white font-bold text-center text-xs rounded-xl active:scale-95 transition-all block"
-                            >
-                              📍 GPS Dir
-                            </a>
+                          <div className="space-y-2 pt-3 border-t border-gray-100">
+                            {/* Dial telephone helper */}
+                            <div className="flex items-center justify-between text-xs text-[#3D1F00]">
+                              <span className="font-semibold flex items-center gap-1">
+                                <Phone size={13} className="text-[#F26522]" />
+                                Dial Staff line:
+                              </span>
+                              <span className="font-mono font-bold">{outlet.phone}</span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-400 font-bold">Delivery Status:</span>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded ${
+                                outlet.delivery !== false 
+                                  ? "bg-green-100 text-green-700" 
+                                  : "bg-amber-100 text-amber-700"
+                              }`}>
+                                {outlet.delivery !== false ? "🛵 Delivery Active" : "🛍️ Pickup Only"}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1.5">
+                              <a 
+                                href={`tel:${outlet.phone.replace(/\s+/g, "")}`}
+                                className="py-2 bg-gray-50 hover:bg-gray-100 text-[#3D1F00] font-bold text-center text-xs rounded-xl border border-gray-100 active:scale-95 transition-all block"
+                              >
+                                📞 Call Branch
+                              </a>
+                              <a 
+                                href={gpsLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="py-2 bg-gradient-to-r from-[#D72B2B] to-[#F26522] text-white font-bold text-center text-xs rounded-xl active:scale-95 transition-all block"
+                              >
+                                📍 GPS Dir
+                              </a>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
               </div>
@@ -1741,6 +1806,7 @@ export default function App() {
           setTrackOrderId(orderId);
           setActiveTab("track");
         }}
+        branches={branches}
       />
 
       {/* =====================================
@@ -1771,9 +1837,13 @@ export default function App() {
                 <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white">
                   <div>
                     <h3 className="font-playfair font-black text-xl text-[#1A0A00] flex items-center gap-1.5">
-                      <span>🍕 Customize &amp; Optimize Order</span>
+                      <span>{selectedConfigureItem.category === "pizza" ? "🍕 Customize & Optimize Pizza" : "✨ Customize & Optimize Item"}</span>
                     </h3>
-                    <p className="text-[11px] text-[#9A7B5E] mt-0.5">Select size and units to optimize item prices automatically</p>
+                    <p className="text-[11px] text-[#9A7B5E] mt-0.5">
+                      {selectedConfigureItem.category === "pizza" 
+                        ? "Select size and units to optimize item prices automatically" 
+                        : "Select units to optimize item prices automatically"}
+                    </p>
                   </div>
                   <button 
                     onClick={() => setSelectedConfigureItem(null)}
@@ -1814,57 +1884,61 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Size chart selection */}
-                  <div className="space-y-3">
-                    <label className="block text-xs font-black uppercase text-[#1A0A00] tracking-wider">
-                      Select Dimension (Size):
-                    </label>
-                    <div className="grid grid-cols-3 gap-2.5">
-                      {(["Small", "Medium", "Large"] as const).map((size) => {
-                        const basePrice = (selectedConfigureItem.discountPrice && selectedConfigureItem.discountPrice < selectedConfigureItem.price)
-                          ? selectedConfigureItem.discountPrice
-                          : selectedConfigureItem.price;
-                        const adjusted = getSizeAdjustedPrice(basePrice, size, selectedConfigureItem.category);
-                        const isSelected = selectedSize === size;
-                        
-                        return (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => setSelectedSize(size)}
-                            className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-between transition-all cursor-pointer ${
-                              isSelected 
-                                ? "bg-gradient-to-b from-[#FFF8F2] to-[#FFF1E5] border-[#D72B2B] shadow-inner scale-[1.02]"
-                                : "bg-white border-gray-200 hover:bg-[#D72B2B]/5 hover:border-[#D72B2B]/20"
-                            }`}
-                          >
-                            <span className={`font-black text-xs ${isSelected ? "text-[#D72B2B]" : "text-gray-700"}`}>
-                              {size}
-                            </span>
-                            <span className="text-[9px] text-[#9A7B5E] mt-0.5">
-                              {size === "Small" ? "8\" (4 Slices)" : size === "Medium" ? "11\" (6 Slices)" : "14\" (8 Slices)"}
-                            </span>
-                            <span className="text-[11px] font-black font-mono text-[#1A0A00] mt-1.5 bg-gray-50 px-2 py-0.5 rounded">
-                              OMR {adjusted.toFixed(2)}
-                            </span>
-                          </button>
-                        );
-                      })}
+                  {/* Size chart selection (Only for Pizza category) */}
+                  {selectedConfigureItem.category === "pizza" && (
+                    <div className="space-y-3">
+                      <label className="block text-xs font-black uppercase text-[#1A0A00] tracking-wider">
+                        Select Dimension (Size):
+                      </label>
+                      <div className="grid grid-cols-3 gap-2.5">
+                        {(["Small", "Medium", "Large"] as const).map((size) => {
+                          const basePrice = (selectedConfigureItem.discountPrice && selectedConfigureItem.discountPrice < selectedConfigureItem.price)
+                            ? selectedConfigureItem.discountPrice
+                            : selectedConfigureItem.price;
+                          const adjusted = getSizeAdjustedPrice(basePrice, size, selectedConfigureItem.category);
+                          const isSelected = selectedSize === size;
+                          
+                          return (
+                            <button
+                              key={size}
+                              type="button"
+                              onClick={() => setSelectedSize(size)}
+                              className={`p-3 rounded-2xl border text-center flex flex-col items-center justify-between transition-all cursor-pointer ${
+                                isSelected 
+                                  ? "bg-gradient-to-b from-[#FFF8F2] to-[#FFF1E5] border-[#D72B2B] shadow-inner scale-[1.02]"
+                                  : "bg-white border-gray-200 hover:bg-[#D72B2B]/5 hover:border-[#D72B2B]/20"
+                              }`}
+                            >
+                              <span className={`font-black text-xs ${isSelected ? "text-[#D72B2B]" : "text-gray-700"}`}>
+                                {size}
+                              </span>
+                              <span className="text-[9px] text-[#9A7B5E] mt-0.5">
+                                {size === "Small" ? "8\" (4 Slices)" : size === "Medium" ? "11\" (6 Slices)" : "14\" (8 Slices)"}
+                              </span>
+                              <span className="text-[11px] font-black font-mono text-[#1A0A00] mt-1.5 bg-gray-50 px-2 py-0.5 rounded">
+                                OMR {adjusted.toFixed(2)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Size Chart info block */}
-                  <div className="bg-white p-3.5 rounded-2xl border border-gray-100 flex gap-3 items-center">
-                    <span className="text-xl">📐</span>
-                    <div className="text-xs leading-relaxed space-y-0.5 text-[#3D1F00]">
-                      <p className="font-extrabold text-[#1A0A00]">Official Pizza City Size Chart:</p>
-                      <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-[#9A7B5E]">
-                        <li><strong>Small (8")</strong> — Ideal personal size for single-portion meals.</li>
-                        <li><strong>Medium (11")</strong> — Generous share size. Perfect for 1 to 2 people.</li>
-                        <li><strong>Large (14")</strong> — Extra-large family tray. Feeds 3 to 4 easily.</li>
-                      </ul>
+                  {/* Size Chart info block (Only for Pizza category) */}
+                  {selectedConfigureItem.category === "pizza" && (
+                    <div className="bg-white p-3.5 rounded-2xl border border-gray-100 flex gap-3 items-center">
+                      <span className="text-xl">📐</span>
+                      <div className="text-xs leading-relaxed space-y-0.5 text-[#3D1F00]">
+                        <p className="font-extrabold text-[#1A0A00]">Official Pizza City Size Chart:</p>
+                        <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-[#9A7B5E]">
+                          <li><strong>Small (8")</strong> — Ideal personal size for single-portion meals.</li>
+                          <li><strong>Medium (11")</strong> — Generous share size. Perfect for 1 to 2 people.</li>
+                          <li><strong>Large (14")</strong> — Extra-large family tray. Feeds 3 to 4 easily.</li>
+                        </ul>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Quantity Selector / Unit Number */}
                   <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100">
@@ -1902,7 +1976,9 @@ export default function App() {
                     return (
                       <div className="bg-gradient-to-r from-green-50 to-emerald-50/50 border border-green-200/60 rounded-2xl p-4 space-y-2.5">
                         <div className="flex justify-between items-center text-xs">
-                          <span className="font-bold text-gray-600">Base Unit Adjusted Rate:</span>
+                          <span className="font-bold text-gray-600">
+                            {selectedConfigureItem.category === "pizza" ? "Base Unit Adjusted Rate:" : "Base Unit Rate:"}
+                          </span>
                           <span className="font-mono text-gray-600">OMR {breakdown.sizeAdjustedPrice.toFixed(2)}</span>
                         </div>
                         {isOptimized && (

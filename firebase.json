@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "database": "ai-studio-pizzacityomanbac-f2ccaeb1-4c03-4366-9483-2c33e6fac556"
+  }
+}

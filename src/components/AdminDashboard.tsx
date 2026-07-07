@@ -30,7 +30,7 @@ import {
   Tag,
   Database,
 } from "lucide-react";
-import { Order, MenuItem, OUTLETS, OutletName } from "../types";
+import { Order, MenuItem, OUTLETS, OutletName, Branch } from "../types";
 
 interface AdminDashboardProps {
   onShowToast: (msg: string) => void;
@@ -276,6 +276,23 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
   const [bannerStylePattern, setBannerStylePattern] = useState<"attached" | "classic" | "modern">("attached");
   const [bannerType, setBannerType] = useState<"hero" | "offer" | "all">("all");
 
+  // Dynamic Branches Manager state hooks
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
+  const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
+  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+
+  const [branchName, setBranchName] = useState("");
+  const [branchPhone, setBranchPhone] = useState("");
+  const [branchWhatsapp, setBranchWhatsapp] = useState("");
+  const [branchAddress, setBranchAddress] = useState("");
+  const [branchMap, setBranchMap] = useState("");
+  const [branchGeo, setBranchGeo] = useState("");
+  const [branchHours, setBranchHours] = useState("Daily 11 AM – 11 PM");
+  const [branchDelivery, setBranchDelivery] = useState(true);
+  const [branchActive, setBranchActive] = useState(true);
+  const [branchImage, setBranchImage] = useState("");
+
   // Modal State
   const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
   const [editingMenuItem, setEditingMenuItem] = useState<MenuItem | null>(null);
@@ -296,7 +313,9 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
   const loadSummaryData = async () => {
     setIsLoadingSummary(true);
     const token = btoa(`${username}:${password}`);
-    const branchKeys = ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"];
+    const branchKeys = (branches && branches.length > 0) 
+      ? branches.map(b => b.name) 
+      : ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"];
     const results: Record<string, { totalOrders: number; totalRevenue: number; pending: number }> = {};
 
     try {
@@ -307,10 +326,10 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
           });
           if (res.ok) {
             const data = await res.json();
-            const pendingCount = data.breakdown.find((b: any) => b._id === "pending")?.count || 0;
+            const pendingCount = data.breakdown?.find((b: any) => b._id === "pending")?.count || 0;
             results[branch] = {
-              totalOrders: data.totals.totalOrders || 0,
-              totalRevenue: data.totals.totalRevenue || 0,
+              totalOrders: data.totals?.totalOrders || 0,
+              totalRevenue: data.totals?.totalRevenue || 0,
               pending: pendingCount,
             };
           } else {
@@ -552,6 +571,163 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
     }
   };
 
+  const loadBranches = async () => {
+    setIsLoadingBranches(true);
+    const token = btoa(`${username}:${password}`);
+    try {
+      const res = await fetch("/admin/api/branches", {
+        headers: { Authorization: `Basic ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBranches(data);
+        
+        // Broadcast and dispatch for real-time synchronization
+        try {
+          const bc = new BroadcastChannel("pizza_city_menu_channel");
+          bc.postMessage({ type: "BRANCHES_UPDATED", branches: data });
+          bc.close();
+        } catch (e) {
+          // sandbox safe fallback
+        }
+        window.dispatchEvent(new CustomEvent("pizza_city_branches_updated", { detail: data }));
+      } else {
+        console.warn("Could not retrieve branches from db.");
+      }
+    } catch (err) {
+      console.warn("Could not retrieve branches from db.", err);
+    } finally {
+      setIsLoadingBranches(false);
+    }
+  };
+
+  const openBranchModal = (branch: Branch | null) => {
+    setEditingBranch(branch);
+    if (branch) {
+      setBranchName(branch.name);
+      setBranchPhone(branch.phone);
+      setBranchWhatsapp(branch.whatsapp);
+      setBranchAddress(branch.address);
+      setBranchMap(branch.map || "");
+      setBranchGeo(branch.geo || "");
+      setBranchHours(branch.hours || "Daily 11 AM – 11 PM");
+      setBranchDelivery(branch.delivery !== false);
+      setBranchActive(branch.isActive !== false);
+      setBranchImage(branch.image || "");
+    } else {
+      setBranchName("");
+      setBranchPhone("");
+      setBranchWhatsapp("");
+      setBranchAddress("");
+      setBranchMap("");
+      setBranchGeo("");
+      setBranchHours("Daily 11 AM – 11 PM");
+      setBranchDelivery(true);
+      setBranchActive(true);
+      setBranchImage("");
+    }
+    setIsBranchModalOpen(true);
+  };
+
+  const handleSaveBranch = async () => {
+    if (!branchName.trim() || !branchPhone.trim() || !branchWhatsapp.trim() || !branchAddress.trim()) {
+      onShowToast("⚠️ Branch Name, Phone, WhatsApp, and Address are required parameters.");
+      return;
+    }
+
+    const token = btoa(`${username}:${password}`);
+    const payload = {
+      name: branchName.trim(),
+      phone: branchPhone.trim(),
+      whatsapp: branchWhatsapp.trim(),
+      address: branchAddress.trim(),
+      map: branchMap.trim(),
+      geo: branchGeo.trim(),
+      hours: branchHours.trim(),
+      delivery: branchDelivery,
+      isActive: branchActive,
+      image: branchImage.trim(),
+    };
+
+    try {
+      if (editingBranch) {
+        const id = editingBranch._id || editingBranch.id;
+        const res = await fetch(`/admin/api/branches/${id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          onShowToast(`✨ Branch "${branchName}" updated successfully.`);
+          setIsBranchModalOpen(false);
+          loadBranches();
+        } else {
+          onShowToast("❌ Server rejected branch update.");
+        }
+      } else {
+        const res = await fetch("/admin/api/branches", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          onShowToast(`🎉 Branch "${branchName}" created successfully.`);
+          setIsBranchModalOpen(false);
+          loadBranches();
+        } else {
+          onShowToast("❌ Server rejected branch creation.");
+        }
+      }
+    } catch (err) {
+      onShowToast("❌ Connection error while saving branch.");
+    }
+  };
+
+  const handleDeleteBranch = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete the branch "${name}"?`)) {
+      return;
+    }
+    const token = btoa(`${username}:${password}`);
+    try {
+      const res = await fetch(`/admin/api/branches/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Basic ${token}` },
+      });
+      if (res.ok) {
+        onShowToast(`🗑️ Branch "${name}" deleted successfully.`);
+        loadBranches();
+      } else {
+        onShowToast("❌ Server rejected branch deletion.");
+      }
+    } catch (err) {
+      onShowToast("❌ Connection error while deleting branch.");
+    }
+  };
+
+  const handleToggleBranchActive = async (id: string, currentActive: boolean) => {
+    const token = btoa(`${username}:${password}`);
+    try {
+      const res = await fetch(`/admin/api/branches/${id}/toggle`, {
+        method: "PATCH",
+        headers: { Authorization: `Basic ${token}` },
+      });
+      if (res.ok) {
+        onShowToast("⚡ Branch active status toggled.");
+        loadBranches();
+      } else {
+        onShowToast("❌ Server rejected toggling active status.");
+      }
+    } catch (err) {
+      onShowToast("❌ Connection handshaking failure.");
+    }
+  };
+
   const openBannerModal = (banner: any | null) => {
     setEditingBanner(banner);
     if (banner) {
@@ -729,6 +905,7 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
       loadMenu();
       loadBanners();
       loadPromos();
+      loadBranches();
       fetchHealthStatus();
     }
   }, [isAuthenticated]);
@@ -783,6 +960,9 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
     } else if (activeTab === "promos") {
       loadPromos();
       onShowToast("🔄 Promo Codes database listings synchronized.");
+    } else if (activeTab === "branches") {
+      loadBranches();
+      onShowToast("🔄 Branches database listings synchronized.");
     }
   };
 
@@ -1119,6 +1299,18 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                   <Tag size={14} className="text-[#FF8C42]" />
                   Promo Codes
                 </button>
+
+                <button
+                  onClick={() => { setActiveTab("branches"); setSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-xs transition-all text-left cursor-pointer ${
+                    activeTab === "branches"
+                      ? "bg-gradient-to-r from-[#D72B2B]/40 to-[#F26522]/30 text-white border border-[#FF8C42]/20"
+                      : "text-white/65 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <MapPin size={14} className="text-[#FF8C42]" />
+                  Branch Management
+                </button>
               </div>
 
               {/* Sidebar Outlet Selector Shortcuts */}
@@ -1135,7 +1327,7 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                   All Outlets
                 </button>
 
-                {["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"].map((branch) => {
+                {(branches && branches.length > 0 ? branches.map(b => b.name) : ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"]).map((branch) => {
                   const data = summaryData[branch] || { pending: 0 };
                   return (
                     <button
@@ -1214,7 +1406,7 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                 <div className="flex items-center gap-2">
                   <span className="text-xl">🏪</span>
                   <h1 className="font-playfair font-black text-lg text-[#1A0A00]">
-                    {activeTab === "dashboard" ? "Dashboard Desk" : activeTab === "orders" ? "Active Invoices" : activeTab === "menu" ? "Menu Catalog" : activeTab === "banners" ? "Setup Live Banners" : "Settings & Promo Codes"}
+                    {activeTab === "dashboard" ? "Dashboard Desk" : activeTab === "orders" ? "Active Invoices" : activeTab === "menu" ? "Menu Catalog" : activeTab === "banners" ? "Setup Live Banners" : activeTab === "branches" ? "Branch Outlets Management" : "Settings & Promo Codes"}
                   </h1>
                 </div>
               </div>
@@ -2025,6 +2217,150 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                 </div>
               )}
 
+              {/* ==================== 6. BRANCH OUTLETS VIEW ==================== */}
+              {activeTab === "branches" && (
+                <div className="space-y-6 animate-fadeIn text-left">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="font-playfair font-black text-2xl text-[#1A0A00]">Oman Branch Network</h3>
+                      <p className="text-xs text-[#9A7B5E]">Manage customer-facing outlets, physical addresses, Google Maps geo links, WhatsApp numbers, opening hours, and delivery statuses.</p>
+                    </div>
+
+                    <button
+                      onClick={() => openBranchModal(null)}
+                      className="px-5 py-2.5 bg-gradient-to-r from-[#D72B2B] to-[#F26522] text-white rounded-full font-black text-xs shadow-md shadow-[#D72B2B]/20 flex items-center justify-center gap-1.5 self-start sm:self-center cursor-pointer hover:scale-[1.02] transition-all"
+                    >
+                      <Plus size={14} />
+                      Add New Branch
+                    </button>
+                  </div>
+
+                  {isLoadingBranches ? (
+                    <div className="bg-white rounded-3xl border border-gray-100 p-12 text-center animate-pulse">
+                      <p className="text-xs text-gray-400 font-bold">Retrieving branches and coordinates from index...</p>
+                    </div>
+                  ) : branches.length === 0 ? (
+                    <div className="bg-white rounded-3xl border border-dashed border-gray-200 p-12 text-center space-y-3">
+                      <p className="text-sm font-bold text-[#3D1F00]">No physical branches found in your store database.</p>
+                      <p className="text-xs text-[#9A7B5E]">Add a store location so users can view outlet locations, make orders, and lookup WhatsApp support channels.</p>
+                      <button
+                        onClick={() => openBranchModal(null)}
+                        className="px-4 py-2 bg-gradient-to-r from-[#D72B2B]/90 to-[#F26522]/90 text-white text-[11px] font-black rounded-lg mx-auto cursor-pointer"
+                      >
+                        Create Your First Branch
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {branches.map((branch) => (
+                        <div 
+                          key={branch._id || branch.id}
+                          className={`bg-white rounded-3xl border overflow-hidden transition-all duration-300 hover:shadow-xl flex flex-col justify-between ${
+                            branch.isActive !== false 
+                              ? "border-gray-100 shadow-md shadow-gray-100/40" 
+                              : "border-gray-200 opacity-70 bg-gray-50/50"
+                          }`}
+                        >
+                          <div>
+                            {/* Branch Card Top Banner */}
+                            <div className="h-32 bg-[#FFF8F2] relative overflow-hidden flex items-center justify-center border-b border-gray-100">
+                              {branch.image ? (
+                                <img 
+                                  src={branch.image} 
+                                  alt={branch.name} 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="text-center space-y-1">
+                                  <span className="text-3xl block">📍</span>
+                                  <span className="text-[10px] uppercase tracking-widest font-black text-[#D72B2B]/60">Pizza City Outlet</span>
+                                </div>
+                              )}
+                              
+                              {/* Status Badge */}
+                              <span className={`absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                branch.isActive !== false 
+                                  ? "bg-green-500/10 text-green-600 border-green-500/20" 
+                                  : "bg-red-500/10 text-red-600 border-red-500/20"
+                              }`}>
+                                {branch.isActive !== false ? "Active" : "Inactive"}
+                              </span>
+                            </div>
+
+                            {/* Branch Main Details */}
+                            <div className="p-5 space-y-4 text-left">
+                              <div className="space-y-0.5">
+                                <h4 className="font-playfair font-black text-lg text-[#1A0A00]">{branch.name}</h4>
+                                <p className="text-[11px] text-gray-500 font-medium leading-relaxed line-clamp-2">📍 {branch.address}</p>
+                              </div>
+
+                              <div className="space-y-2 border-t border-dashed border-gray-100 pt-3 text-xs">
+                                <div className="flex items-center justify-between text-gray-600">
+                                  <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Contact Phone:</span>
+                                  <span className="font-mono text-gray-800 font-bold text-gray-700">{branch.phone}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-gray-600">
+                                  <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">WhatsApp Ordering:</span>
+                                  <span className="font-mono text-gray-800 font-bold text-emerald-600">{branch.whatsapp}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-gray-600">
+                                  <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Opening Hours:</span>
+                                  <span className="font-semibold text-gray-700">{branch.hours || "Daily 11 AM – 11 PM"}</span>
+                                </div>
+
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Delivery Available:</span>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                    branch.delivery !== false 
+                                      ? "bg-[#D72B2B]/10 text-[#FF8C42]" 
+                                      : "bg-gray-100 text-gray-400"
+                                  }`}>
+                                    {branch.delivery !== false ? "Yes, Active" : "No, Pickup Only"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Card Actions Footer */}
+                          <div className="p-5 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between gap-2.5">
+                            <button
+                              onClick={() => handleToggleBranchActive(branch._id || branch.id || "", branch.isActive !== false)}
+                              className={`flex-1 py-1.5 rounded-lg font-black text-[10px] uppercase border transition-all cursor-pointer ${
+                                branch.isActive !== false 
+                                  ? "bg-white text-red-500 border-red-500/20 hover:bg-red-500/5" 
+                                  : "bg-[#FF8C42] text-white border-none hover:bg-opacity-90"
+                              }`}
+                            >
+                              {branch.isActive !== false ? "Deactivate" : "Activate"}
+                            </button>
+
+                            <button
+                              onClick={() => openBranchModal(branch)}
+                              className="p-1.5 bg-white hover:bg-[#FFF8F2] border border-gray-200 text-gray-600 hover:text-[#FF8C42] rounded-lg transition-all cursor-pointer"
+                              title="Edit Branch Outlet"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteBranch(branch._id || branch.id || "", branch.name)}
+                              className="p-1.5 bg-white hover:bg-red-50 text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-200 rounded-lg transition-all cursor-pointer"
+                              title="Delete Branch"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </main>
 
@@ -2514,6 +2850,186 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                     className="px-6 py-2.5 bg-gradient-to-r from-[#D72B2B] to-[#F26522] text-white rounded-full text-xs font-black shadow-md shadow-[#D72B2B]/15 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
                   >
                     {editingPromo ? "Save Changes" : "Create Code"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== BRANCH DIALOG MODAL ==================== */}
+          {isBranchModalOpen && (
+            <div className="fixed inset-0 bg-[#1A0A00]/55 backdrop-blur-xs z-50 flex items-center justify-center p-4 text-left">
+              <div className="w-full max-w-lg bg-white rounded-3xl border border-[#D72B2B]/10 p-6 md:p-8 space-y-6 shadow-2xl relative animate-scaleUp max-h-[90vh] overflow-y-auto">
+                <button
+                  onClick={() => setIsBranchModalOpen(false)}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-[#1A0A00] p-1.5 hover:bg-gray-100 rounded-full transition-all cursor-pointer"
+                >
+                  <CloseIcon size={18} />
+                </button>
+
+                <div className="space-y-1">
+                  <h3 className="font-playfair font-black text-xl text-[#1A0A00]">
+                    {editingBranch ? "✏️ Edit Branch Location" : "🏢 Create New Physical Branch"}
+                  </h3>
+                  <p className="text-xs text-[#9A7B5E]">Configure live database outlet attributes for customers site.</p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Row 1: Name and Hours */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#1A0A00] uppercase block">Branch Name *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Nizwa"
+                        value={branchName}
+                        onChange={(e) => setBranchName(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none font-bold"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#1A0A00] uppercase block">Opening Hours</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Daily 11 AM – 11 PM"
+                        value={branchHours}
+                        onChange={(e) => setBranchHours(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Row 2: Phone and WhatsApp */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#1A0A00] uppercase block">Contact Phone *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 96928714"
+                        value={branchPhone}
+                        onChange={(e) => setBranchPhone(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#1A0A00] uppercase block">WhatsApp Ordering *</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 96928714"
+                        value={branchWhatsapp}
+                        onChange={(e) => setBranchWhatsapp(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Row 3: Address */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-[#1A0A00] uppercase block">Full Address *</label>
+                    <textarea
+                      placeholder="e.g. Firq near Nizwa Grand Mall, Nizwa, Oman"
+                      value={branchAddress}
+                      onChange={(e) => setBranchAddress(e.target.value)}
+                      rows={2}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  {/* Row 4: Google Maps Link & Map Location */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#1A0A00] uppercase block">Google Maps Link (Map)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. https://maps.google.com/..."
+                        value={branchMap}
+                        onChange={(e) => setBranchMap(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-[#1A0A00] uppercase block">Coords/Geo (Short location name)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Nizwa"
+                        value={branchGeo}
+                        onChange={(e) => setBranchGeo(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-[#3D1F00] focus:border-[#F26522] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Row 5: Image Uploader */}
+                  <div className="space-y-1.5">
+                    <ImageUploader
+                      id="branch-image-upload"
+                      imageUrl={branchImage}
+                      onChange={setBranchImage}
+                      onShowToast={onShowToast}
+                      token={adminToken}
+                      label="Branch Optional Image Cover"
+                    />
+                  </div>
+
+                  {/* Row 6: Toggles */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                      <div>
+                        <span className="text-xs font-black text-[#1A0A00] uppercase block">Delivery Status</span>
+                        <span className="text-[10px] text-gray-400">Available for delivery?</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBranchDelivery(!branchDelivery)}
+                        className={`w-12 h-6 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 ${
+                          branchDelivery ? "bg-green-500" : "bg-gray-300"
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-300 ${
+                            branchDelivery ? "translate-x-6" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                      <div>
+                        <span className="text-xs font-black text-[#1A0A00] uppercase block">Branch Status</span>
+                        <span className="text-[10px] text-gray-400">Published to customers?</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBranchActive(!branchActive)}
+                        className={`w-12 h-6 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-300 ${
+                          branchActive ? "bg-green-500" : "bg-gray-300"
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-300 ${
+                            branchActive ? "translate-x-6" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => setIsBranchModalOpen(false)}
+                    className="px-5 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-500 rounded-full text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveBranch}
+                    className="px-6 py-2.5 bg-gradient-to-r from-[#D72B2B] to-[#F26522] text-white rounded-full text-xs font-black shadow-md shadow-[#D72B2B]/15 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    {editingBranch ? "Save Changes" : "Create Branch"}
                   </button>
                 </div>
               </div>

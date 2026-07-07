@@ -1,6 +1,6 @@
-import React, { useState } from "react";
-import { X, Search, ShoppingCart, MessageSquare, MapPin, ChevronRight, Info, Plus, Minus } from "lucide-react";
-import { MenuItem, OUTLETS, OutletName, CartEntry } from "../types";
+import React, { useState, useEffect } from "react";
+import { X, Search, ShoppingCart, MessageSquare, MapPin, ChevronRight, Info, Plus, Minus, Phone } from "lucide-react";
+import { MenuItem, OUTLETS, OutletName, CartEntry, Branch } from "../types";
 import { getVolumeDiscountPercentage, getSizeAdjustedPrice } from "../lib/priceUtils";
 
 interface OutletSelectorProps {
@@ -11,6 +11,7 @@ interface OutletSelectorProps {
   onShowToast: (msg: string) => void;
   onUpdateCartItem: (index: number, newQty: number, newSize: "Small" | "Medium" | "Large") => void;
   onOrderSuccess?: (orderId: string) => void;
+  branches?: Branch[];
 }
 
 export default function OutletSelector({
@@ -21,10 +22,31 @@ export default function OutletSelector({
   onShowToast,
   onUpdateCartItem,
   onOrderSuccess,
+  branches,
 }: OutletSelectorProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedOutlet, setSelectedOutlet] = useState<OutletName | null>(null);
+  const [selectedOutlet, setSelectedOutlet] = useState<string | null>(null);
   
+  // Dynamic branches state
+  const [localBranches, setLocalBranches] = useState<Branch[]>([]);
+  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (branches && branches.length > 0) {
+      setLocalBranches(branches.filter(b => b.isActive !== false));
+      return;
+    }
+    setIsLoadingBranches(true);
+    fetch("/api/branches")
+      .then((r) => r.json())
+      .then((data) => {
+        setLocalBranches(data.filter((b: any) => b.isActive !== false));
+      })
+      .catch((err) => console.warn("Failed fetching active branches:", err))
+      .finally(() => setIsLoadingBranches(false));
+  }, [isOpen, branches]);
+
   // Customer details form state
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -53,9 +75,16 @@ export default function OutletSelector({
   const finalAmount = Math.max(0, totalAmount - discountAmount);
 
   // Group outlets based on search query
+  const q = searchQuery.toLowerCase().trim();
+  const filteredDynamicBranches = localBranches.filter((b) => {
+    return (
+      b.name.toLowerCase().includes(q) ||
+      b.address.toLowerCase().includes(q)
+    );
+  });
+
   const filteredOutletsKeys = (Object.keys(OUTLETS) as OutletName[]).filter((key) => {
     const outlet = OUTLETS[key];
-    const q = searchQuery.toLowerCase().trim();
     return (
       outlet.name.toLowerCase().includes(q) ||
       outlet.location.toLowerCase().includes(q)
@@ -98,7 +127,7 @@ export default function OutletSelector({
     setPromoError("");
   };
 
-  const handleOrderSubmission = async (outletName: OutletName) => {
+  const handleOrderSubmission = async (outletName: string) => {
     if (!customerName.trim()) {
       onShowToast("⚠️ Please enter your name.");
       setStep("checkout");
@@ -115,7 +144,7 @@ export default function OutletSelector({
 
     const orderPayload = {
       items: cart.map((entry) => ({
-        name: `${entry.item.name} [Size: ${entry.size}]`,
+        name: entry.item.category === "pizza" ? `${entry.item.name} [Size: ${entry.size}]` : entry.item.name,
         price: entry.unitPrice,
         quantity: entry.quantity,
       })),
@@ -278,7 +307,10 @@ export default function OutletSelector({
                       <div>
                         <h5 className="font-black text-xs text-[#1A0A00]">{entry.item.name}</h5>
                         <p className="text-[10px] text-[#9A7B5E] mt-0.5">
-                          Base OMR {entry.item.price.toFixed(2)} · Size: <span className="font-bold text-[#3D1F00]">{entry.size}</span>
+                          Base OMR {entry.item.price.toFixed(2)}
+                          {entry.item.category === "pizza" && (
+                            <> · Size: <span className="font-bold text-[#3D1F00]">{entry.size}</span></>
+                          )}
                         </p>
                       </div>
                       <div className="text-right flex flex-col items-end">
@@ -315,18 +347,24 @@ export default function OutletSelector({
                       </div>
 
                       {/* Size Selector */}
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-black uppercase text-[#9A7B5E]">Size:</span>
-                        <select
-                          value={entry.size}
-                          onChange={(e) => onUpdateCartItem(index, entry.quantity, e.target.value as any)}
-                          className="text-[10px] font-bold bg-white text-[#3D1F00] border border-gray-200 rounded-lg px-2 py-0.5 cursor-pointer focus:outline-none"
-                        >
-                          <option value="Small">Small (8")</option>
-                          <option value="Medium">Medium (11")</option>
-                          <option value="Large">Large (14")</option>
-                        </select>
-                      </div>
+                      {entry.item.category === "pizza" ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-black uppercase text-[#9A7B5E]">Size:</span>
+                          <select
+                            value={entry.size}
+                            onChange={(e) => onUpdateCartItem(index, entry.quantity, e.target.value as any)}
+                            className="text-[10px] font-bold bg-white text-[#3D1F00] border border-gray-200 rounded-lg px-2 py-0.5 cursor-pointer focus:outline-none"
+                          >
+                            <option value="Small">Small (8")</option>
+                            <option value="Medium">Medium (11")</option>
+                            <option value="Large">Large (14")</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] font-bold text-[#9A7B5E] bg-gray-100 px-2 py-0.5 rounded-full">
+                          Standard Size
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -488,7 +526,37 @@ export default function OutletSelector({
               </div>
 
               <div className="space-y-3">
-                {filteredOutletsKeys.length > 0 ? (
+                {isLoadingBranches ? (
+                  <p className="text-center text-xs text-[#9A7B5E] py-4">Synchronizing branch status indices...</p>
+                ) : localBranches.length > 0 ? (
+                  filteredDynamicBranches.length > 0 ? (
+                    filteredDynamicBranches.map((branch) => (
+                      <div
+                        key={branch._id || branch.id}
+                        onClick={() => handleOrderSubmission(branch.name)}
+                        className="flex items-center gap-4 p-4 bg-white hover:bg-[#D72B2B]/5 rounded-2xl cursor-pointer border border-transparent hover:border-[#D72B2B]/20 transition-all shadow-sm active:scale-[0.98]"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#D72B2B]/10 to-[#F26522]/10 border border-[#D72B2B]/10 flex items-center justify-center font-bold text-lg text-[#D72B2B]">
+                          🍕
+                        </div>
+                        <div className="flex-1 text-left">
+                          <h5 className="font-extrabold text-sm text-[#1A0A00]">
+                            Pizza City — {branch.name}
+                          </h5>
+                          <div className="flex items-center gap-1.5 mt-1 text-xs text-[#9A7B5E]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]"></span>
+                            <span>{branch.hours || "Open Now · Daily 11 AM - 11 PM"} · 📞 {branch.phone}</span>
+                          </div>
+                        </div>
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-[#D72B2B] to-[#F26522] flex items-center justify-center text-white font-bold text-xs shadow-md">
+                          →
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-center text-sm text-[#9A7B5E] py-4">No matching active outlets found.</p>
+                  )
+                ) : filteredOutletsKeys.length > 0 ? (
                   filteredOutletsKeys.map((key) => {
                     const outlet = OUTLETS[key];
                     return (
@@ -500,7 +568,7 @@ export default function OutletSelector({
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#D72B2B]/10 to-[#F26522]/10 border border-[#D72B2B]/10 flex items-center justify-center font-bold text-lg text-[#D72B2B]">
                           🍕
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 text-left">
                           <h5 className="font-extrabold text-sm text-[#1A0A00]">
                             Pizza City — {outlet.name}
                           </h5>

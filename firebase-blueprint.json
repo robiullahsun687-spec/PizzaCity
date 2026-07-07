@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "Menu item offered in Pizza City",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The display name of the pizza, side, dessert, or drink." },
+        "category": { "type": "string", "description": "Category: pizza, sides, dessert, drinks." },
+        "price": { "type": "number", "description": "Base price in Omani Rial." },
+        "description": { "type": "string", "description": "A mouthwatering description of the item." },
+        "image": { "type": "string", "description": "Image Unsplash URL." },
+        "available": { "type": "boolean", "description": "In-stock status." },
+        "subCategory": { "type": "string", "description": "Sub-category descriptors." },
+        "badge": { "type": "string", "description": "Special ribbon badge (e.g., Best Seller)." },
+        "featured": { "type": "boolean", "description": "Featured items shown in front carousel." },
+        "discountPrice": { "type": "number", "description": "Special price when discounted." },
+        "discountPercentage": { "type": "number", "description": "Percentage discount value." }
+      },
+      "required": ["name", "category", "price"]
+    },
+    "PromoCode": {
+      "title": "PromoCode",
+      "description": "Promotional coupons/discounts",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Uppercase alphanumeric coupon code." },
+        "discountType": { "type": "string", "enum": ["percentage", "flat"], "description": "Percentage-based or fixed OMR amount discount." },
+        "discountValue": { "type": "number", "description": "The percentage number or flat OMR value." },
+        "minOrderAmount": { "type": "number", "description": "Minimum basket total required to apply." },
+        "isActive": { "type": "boolean", "description": "Active status." }
+      },
+      "required": ["code", "discountType", "discountValue"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "description": "List of ordered items (name, price, quantity)." },
+        "customer": { "type": "object", "description": "Customer metadata containing name, phone, optional email, notes." },
+        "outlet": { "type": "string", "description": "The chosen branch outlet name." },
+        "status": { "type": "string", "enum": ["pending", "preparing", "out-for-delivery", "delivered", "cancelled"], "description": "Current dispatch step." },
+        "total": { "type": "number", "description": "Final price after coupons, sizing, and quantity adjustments." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Order creation date." }
+      },
+      "required": ["items", "customer", "outlet", "status", "total"]
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "Hero & offer promotional banners",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Primary banner headline." },
+        "subtitle": { "type": "string", "description": "Supporting paragraph text." },
+        "badge": { "type": "string", "description": "Visual pill tag at the top of the banner." },
+        "image": { "type": "string", "description": "Cover background banner image URL." },
+        "buttonText": { "type": "string", "description": "Primary call-to-action button label." },
+        "buttonLink": { "type": "string", "description": "Destination anchor link (e.g. #menu)." },
+        "isActive": { "type": "boolean", "description": "Toggle visibility." },
+        "stylePattern": { "type": "string", "description": "Aesthetic style layout pattern." },
+        "type": { "type": "string", "description": "Displays inside hero slider or offer carousel cards." }
+      },
+      "required": ["title"]
+    }
+  },
+  "firestore": {
+    "menuItems": {
+      "schema": "MenuItem",
+      "description": "Pizza City menu products list"
+    },
+    "promos": {
+      "schema": "PromoCode",
+      "description": "Discount coupon definitions"
+    },
+    "orders": {
+      "schema": "Order",
+      "description": "Customer and outlet transaction orders"
+    },
+    "banners": {
+      "schema": "Banner",
+      "description": "Home sliding promotional banners"
+    }
+  }
+}

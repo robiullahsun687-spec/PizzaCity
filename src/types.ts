@@ -8,6 +8,7 @@ export interface MenuItem {
   available: boolean;
   discountPrice?: number;
   discountPercentage?: number;
+  featured?: boolean;
 }
 
 export interface PromoCode {
@@ -47,6 +48,21 @@ export interface Order {
   status: 'pending' | 'preparing' | 'out-for-delivery' | 'delivered' | 'cancelled';
   total: number;
   timestamp: string;
+}
+
+export interface Branch {
+  _id?: string;
+  id?: string;
+  name: string;
+  phone: string;
+  whatsapp: string;
+  address: string;
+  map?: string;
+  geo?: string;
+  hours?: string;
+  delivery?: boolean;
+  isActive?: boolean;
+  image?: string;
 }
 
 export const OUTLETS = {
