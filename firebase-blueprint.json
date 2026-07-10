@@ -62,6 +62,24 @@
         "type": { "type": "string", "description": "Displays inside hero slider or offer carousel cards." }
       },
       "required": ["title"]
+    },
+    "Branch": {
+      "title": "Branch",
+      "description": "Pizza City branch outlet location",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Display name of the outlet." },
+        "phone": { "type": "string", "description": "Branch staff telephone line." },
+        "whatsapp": { "type": "string", "description": "Active WhatsApp number for order support." },
+        "address": { "type": "string", "description": "Full physical address description." },
+        "map": { "type": "string", "description": "Google Maps embed or custom map URL." },
+        "geo": { "type": "string", "description": "GPS coordinates or geo-location name." },
+        "hours": { "type": "string", "description": "Operating hours of this branch." },
+        "delivery": { "type": "boolean", "description": "Is home delivery option active?" },
+        "isActive": { "type": "boolean", "description": "Toggle visibility status." },
+        "image": { "type": "string", "description": "Optional cover photo URL." }
+      },
+      "required": ["name", "phone", "whatsapp", "address"]
     }
   },
   "firestore": {
@@ -80,6 +98,10 @@
     "banners": {
       "schema": "Banner",
       "description": "Home sliding promotional banners"
+    },
+    "branches": {
+      "schema": "Branch",
+      "description": "Pizza City active and passive outlets network catalog"
     }
   }
 }

@@ -314,7 +314,7 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
     setIsLoadingSummary(true);
     const token = btoa(`${username}:${password}`);
     const branchKeys = (branches && branches.length > 0) 
-      ? branches.map(b => b.name) 
+      ? branches.filter(b => b.isActive !== false).map(b => b.name) 
       : ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"];
     const results: Record<string, { totalOrders: number; totalRevenue: number; pending: number }> = {};
 
@@ -348,9 +348,11 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
   const loadOrders = async (outlet: string, status: string) => {
     setIsLoadingOrders(true);
     const token = btoa(`${username}:${password}`);
+    const branchKeys = (branches && branches.length > 0)
+      ? branches.filter(b => b.isActive !== false).map(b => b.name)
+      : ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"];
     try {
       if (outlet === "all") {
-        const branchKeys = ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"];
         const results = await Promise.all(
           branchKeys.map(async (branch) => {
             const res = await fetch(`/api/orders/${branch}${status ? `?status=${status}` : ""}`, {
@@ -413,11 +415,47 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isAuthenticated) return;
+
+    // Initial load
+    loadSummaryData();
+    loadOrders(selectedOutlet, orderStatusFilter);
+
+    // 🕒 7-second auto-polling for robust multi-device/multi-session sync
+    const intervalId = setInterval(() => {
       loadSummaryData();
       loadOrders(selectedOutlet, orderStatusFilter);
+    }, 7000);
+
+    // ⚡ Cross-tab / same-origin Live Broadcast and CustomEvent listeners for instant sync
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("pizza_city_menu_channel");
+      bc.onmessage = (event) => {
+        if (event.data && event.data.type === "NEW_ORDER_PLACED") {
+          loadSummaryData();
+          loadOrders(selectedOutlet, orderStatusFilter);
+          onShowToast("🔔 Live Order sync: A new order was just placed!");
+        }
+      };
+    } catch (e) {
+      console.warn("BroadcastChannel sandbox block in AdminDashboard:", e);
     }
-  }, [isAuthenticated, selectedOutlet, orderStatusFilter]);
+
+    const handleCustomOrderEvent = () => {
+      loadSummaryData();
+      loadOrders(selectedOutlet, orderStatusFilter);
+      onShowToast("🔔 Live Order sync: A new order was just placed!");
+    };
+
+    window.addEventListener("pizza_city_new_order_placed", handleCustomOrderEvent);
+
+    return () => {
+      clearInterval(intervalId);
+      if (bc) bc.close();
+      window.removeEventListener("pizza_city_new_order_placed", handleCustomOrderEvent);
+    };
+  }, [isAuthenticated, selectedOutlet, orderStatusFilter, branches]);
 
   const loadBanners = async () => {
     setIsLoadingBanners(true);
@@ -1468,8 +1506,10 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                     <div className="bg-white p-5 rounded-3xl border border-[#D72B2B]/10 shadow-sm relative overflow-hidden">
                       <div className="absolute right-3 top-3 text-2xl opacity-20">🏪</div>
                       <span className="block text-[10px] font-black uppercase text-[#9A7B5E] tracking-wider mb-2">Activated Branches</span>
-                      <h3 className="font-playfair font-black text-2xl text-green-600">5</h3>
-                      <p className="text-[10px] text-[#9A7B5E] mt-1.5">All standard branches online</p>
+                      <h3 className="font-playfair font-black text-2xl text-green-600">
+                        {isLoadingBranches ? "..." : (branches && branches.length > 0) ? branches.filter(b => b.isActive !== false).length : 5}
+                      </h3>
+                      <p className="text-[10px] text-[#9A7B5E] mt-1.5">Active outlet locations online</p>
                     </div>
 
                   </div>
@@ -1538,7 +1578,10 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"].map((branch) => {
+                      {((branches && branches.length > 0)
+                        ? branches.filter(b => b.isActive !== false).map(b => b.name)
+                        : ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"]
+                      ).map((branch) => {
                         const data = summaryData[branch] || { totalOrders: 0, totalRevenue: 0, pending: 0 };
                         return (
                           <div 
@@ -1605,7 +1648,10 @@ export default function AdminDashboard({ onShowToast, onMenuUpdated }: AdminDash
                       >
                         🌐 All Oman Outlets
                       </button>
-                      {["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"].map((branch) => (
+                       {((branches && branches.length > 0)
+                        ? branches.filter(b => b.isActive !== false).map(b => b.name)
+                        : ["Nizwa", "Samail", "Sur", "Quriyat", "Fanja"]
+                      ).map((branch) => (
                         <button
                           key={branch}
                           onClick={() => setSelectedOutlet(branch)}

@@ -189,6 +189,16 @@ export default function OutletSelector({
 
       onShowToast(`🎉 Order Placed! Opening WhatsApp for ${outletName}...`);
       
+      // ⚡ Broadcast and dispatch new order event for live sync
+      try {
+        const bc = new BroadcastChannel("pizza_city_menu_channel");
+        bc.postMessage({ type: "NEW_ORDER_PLACED", order: data.order });
+        bc.close();
+      } catch (e) {
+        // sandbox safe fallback
+      }
+      window.dispatchEvent(new CustomEvent("pizza_city_new_order_placed", { detail: data.order }));
+
       // Delay slightly and open WhatsApp pre-filled text in new window
       setTimeout(() => {
         if (data.whatsappUrl) {

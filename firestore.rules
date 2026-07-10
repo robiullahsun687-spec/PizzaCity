@@ -26,6 +26,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /branches/{branchId} {
+      allow read, write: if true;
+    }
+
     // Orders collection (Client can create new orders with valid schema, and list/update status)
     match /orders/{orderId} {
       allow read: if true;
