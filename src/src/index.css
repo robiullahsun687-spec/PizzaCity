@@ -1,0 +1,252 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Nunito:wght@300;400;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nunito", system-ui, sans-serif;
+  --font-playfair: "Playfair Display", serif;
+  --font-nunito: "Nunito", system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+.font-playfair {
+  font-family: var(--font-playfair);
+}
+
+/* ==========================================================================
+   🔥 MIDNIGHT OVEN HIGH-CONTRAST DARK MODE THEME SYSTEM
+   ========================================================================== */
+
+/* Main theme scope */
+.midnight-oven {
+  background-color: #090302 !important;
+  color: #ffedd4 !important;
+  color-scheme: dark;
+}
+
+/* Scrollbars */
+.midnight-oven ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.midnight-oven ::-webkit-scrollbar-track {
+  background: #110502;
+}
+
+.midnight-oven ::-webkit-scrollbar-thumb {
+  background: #3a150c;
+  border-radius: 4px;
+}
+
+.midnight-oven ::-webkit-scrollbar-thumb:hover {
+  background: #ff5522;
+}
+
+/* Background elements styling hook */
+.midnight-oven .bg-\[\#FFF8F2\] {
+  background-color: #090302 !important;
+}
+
+/* Navigation headers and sidebars */
+.midnight-oven nav,
+.midnight-oven #navbar {
+  background-color: rgba(16, 7, 5, 0.97) !important;
+  border-color: rgba(255, 85, 34, 0.22) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+.midnight-oven nav button,
+.midnight-oven nav span,
+.midnight-oven nav a,
+.midnight-oven nav div {
+  color: #ffedd4;
+}
+
+/* General standard block container backgrounds */
+.midnight-oven .bg-white {
+  background-color: #140805 !important;
+  border-color: rgba(255, 85, 34, 0.16) !important;
+}
+
+/* Card components */
+.midnight-oven .bg-white\/5 {
+  background-color: rgba(255, 85, 34, 0.05) !important;
+  border-color: rgba(255, 85, 34, 0.18) !important;
+}
+
+.midnight-oven .bg-white\/95 {
+  background-color: rgba(16, 7, 5, 0.97) !important;
+}
+
+/* Inner elements spacing */
+.midnight-oven .bg-\[\#FFF8F2\]\/60 {
+  background-color: rgba(26, 11, 7, 0.6) !important;
+  border-color: rgba(255, 85, 34, 0.12) !important;
+}
+
+.midnight-oven .bg-\[\#FFF8F2\]\/50 {
+  background-color: rgba(26, 11, 7, 0.5) !important;
+}
+
+.midnight-oven .bg-\[\#FFF8F2\]\/2 {
+  background-color: rgba(255, 85, 34, 0.02) !important;
+}
+
+/* Muted light boxes */
+.midnight-oven .bg-gray-50,
+.midnight-oven .bg-\[\#F5EDE3\]\/50 {
+  background-color: #1d0d09 !important;
+  border-color: rgba(255, 85, 34, 0.15) !important;
+}
+
+.midnight-oven .bg-gray-100 {
+  background-color: #22100a !important;
+  border-color: rgba(255, 85, 34, 0.15) !important;
+}
+
+.midnight-oven .hover\:bg-gray-100:hover,
+.midnight-oven .hover\:bg-gray-50:hover {
+  background-color: #2b140d !important;
+}
+
+/* Text heavy elements */
+.midnight-oven .text-\[\#3D1F00\] {
+  color: #ffedd4 !important;
+}
+
+.midnight-oven .text-\[\#1A0A00\] {
+  color: #fffaf0 !important;
+}
+
+.midnight-oven .text-\[\#9A7B5E\] {
+  color: #ceb5a8 !important;
+}
+
+/* Brand red and orange accents */
+.midnight-oven .text-\[\#D72B2B\] {
+  color: #ff5050 !important;
+}
+
+.midnight-oven .bg-\[\#D72B2B\]\/10,
+.midnight-oven .bg-\[\#D72B2B\]\/5 {
+  background-color: rgba(255, 80, 80, 0.09) !important;
+}
+
+.midnight-oven .bg-\[\#D72B2B\] {
+  background-color: #e63939 !important;
+  color: white !important;
+}
+
+.midnight-oven .hover\:bg-\[\#FFF8F2\]:hover {
+  background-color: #23110b !important;
+}
+
+.midnight-oven .hover\:bg-\[\#D72B2B\]\/5:hover {
+  background-color: rgba(255, 80, 80, 0.12) !important;
+}
+
+/* Input Fields and Select Dropdowns */
+.midnight-oven input,
+.midnight-oven select,
+.midnight-oven textarea {
+  background-color: #180906 !important;
+  color: #ffedd4 !important;
+  border-color: rgba(255, 85, 34, 0.25) !important;
+}
+
+.midnight-oven input:focus,
+.midnight-oven select:focus,
+.midnight-oven textarea:focus {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
+/* Borders elements */
+.midnight-oven .border-gray-100,
+.midnight-oven .border-gray-150,
+.midnight-oven .border-gray-200,
+.midnight-oven .border-gray-300 {
+  border-color: rgba(255, 85, 34, 0.15) !important;
+}
+
+/* Divider boundaries */
+.midnight-oven .border-t,
+.midnight-oven .border-b,
+.midnight-oven .border-l,
+.midnight-oven .border-r {
+  border-color: rgba(255, 85, 34, 0.18) !important;
+}
+
+/* Footer rules */
+.midnight-oven footer {
+  background-color: #070201 !important;
+  border-top: 1px solid rgba(255, 85, 34, 0.18) !important;
+}
+
+/* Modal backgrounds */
+.midnight-oven .bg-\[\#FFF8F2\] {
+  background-color: #120604 !important;
+}
+
+/* Size configuration inner buttons */
+.midnight-oven .bg-gradient-to-b.from-\[\#FFF8F2\] {
+  background-image: linear-gradient(to bottom, #1e0a05, #120604) !important;
+  border-color: rgba(255, 85, 34, 0.4) !important;
+}
+
+/* Green dynamic pricing discount pill */
+.midnight-oven .bg-gradient-to-r.from-green-50,
+.midnight-oven .bg-green-50 {
+  background-color: rgba(16, 185, 129, 0.08) !important;
+  color: #10b981 !important;
+  border-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+.midnight-oven .text-green-700,
+.midnight-oven .text-green-800,
+.midnight-oven .text-green-900 {
+  color: #34d399 !important;
+}
+
+.midnight-oven .bg-green-100 {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  color: #34d399 !important;
+}
+
+/* Secondary Button variations */
+.midnight-oven .bg-\[\#F5EDE3\] {
+  background-color: #1e0d08 !important;
+  color: #ff7733 !important;
+  border-color: rgba(255, 85, 34, 0.2) !important;
+}
+
+.midnight-oven .bg-\[\#F5EDE3\]:hover {
+  background-color: #2b140d !important;
+}
+
+/* Star rating reviews decoration */
+.midnight-oven .text-amber-500 {
+  color: #f59e0b !important;
+}
+
+/* Custom stats section markers */
+.midnight-oven .text-amber-600 {
+  color: #fbbf24 !important;
+}
+
+.midnight-oven .bg-amber-500\/5 {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+  border-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+/* Admin lists table entries */
+.midnight-oven .bg-\[\#F26522\]\/2 {
+  background-color: rgba(255, 85, 34, 0.04) !important;
+}
